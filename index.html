@@ -16,7 +16,7 @@
          padding:var(--panel-pad);width:var(--panel-w);max-height:70vh;overflow:auto}
   @media (min-width:801px){ .panel{ top:calc(10px + var(--safe-top)); left:10px } }
   @media (max-width:800px){ .panel{ width:min(92vw,520px); left:50%; transform:translateX(-50%); bottom:calc(8px + var(--safe-bottom)); max-height:55vh } }
-  .row{display:flex;gap:6px;margin:6px 0;align-items:center; flex-wrap: wrap;}
+  .row{display:flex;gap:6px;margin:6px 0;align-items:center;flex-wrap:wrap}
   .row label{min-width:110px;font-size:13px}
   input,select,button{font-size:14px}
   textarea{width:100%;height:120px;font:12px ui-monospace,Menlo,Consolas,monospace}
@@ -95,6 +95,7 @@ require([
   "esri/geometry/geometryEngine","esri/widgets/ScaleBar"
 ], (esriConfig,Map,MapView,FeatureLayer,GraphicsLayer,Graphic,geometryEngine,ScaleBar) => {
 
+  // CORS prudenziale per il server EEA
   try{ esriConfig.request.corsEnabledServers.push("https://image.discomap.eea.europa.eu"); }catch(e){}
 
   const logEl = document.getElementById("log");
@@ -112,11 +113,11 @@ require([
 
   // Layer CLC
   let fl = null;
-  // Layer per mostrare i confini caricati
+  // Layer per disegnare i confini caricati
   const bndLayer = new GraphicsLayer({ title: "Confini selezione" });
   map.add(bndLayer);
 
-  // Pannello
+  // UI
   const isMobile = window.matchMedia("(max-width:800px)").matches;
   const togglePanel = (show) => {
     const want = (typeof show === "boolean") ? show : panel.hidden;
@@ -130,7 +131,6 @@ require([
     legendBox.style.display = collapsed ? "block" : "none";
     btnLegToggle.textContent = collapsed ? "Minimizza" : "Massimizza";
   };
-
   function log(m){ logEl.textContent += m+"\\n"; logEl.scrollTop = logEl.scrollHeight; }
 
   // Demo palette
@@ -161,47 +161,46 @@ require([
     for(const [k,v] of Object.entries(obj)) sel.append(new Option(v.title||k,k));
   }
 
-  // Carica/confini GeoJSON e applica filtro spaziale
+  // Carica confini PT subito e su click
   let clipGeom = null;
-  document.getElementById("btnLoadBnd").onclick = async () => {
-    await loadBoundaries();
-  };
-  // carica subito PT all’avvio (auto)
+  document.getElementById("btnLoadBnd").onclick = () => loadBoundaries().catch(e=>alert(e.message||e));
   loadBoundaries().catch(()=>{});
 
   async function loadBoundaries(){
-    try{
-      const url = document.getElementById("bndUrl").value.trim();
-      if(!url){ alert("Inserisci l'URL di un GeoJSON di confini."); return; }
-      logEl.textContent = ""; log("Scarico GeoJSON confini…");
-      const gj = await (await fetch(url)).json();
+    const url = document.getElementById("bndUrl").value.trim();
+    if(!url) throw new Error("Inserisci l'URL di un GeoJSON di confini.");
+    logEl.textContent = ""; log("Scarico GeoJSON confini…");
+    const gj = await (await fetch(url)).json();
 
-      // Converte a un'unica geometria (union) in WKID:4326
-      const geoms = [];
-      const feats = gj.features || [];
-      feats.forEach(f => {
-        if(!f.geometry) return;
-        const g = gjGeomToEsri(f.geometry);
-        if(g) geoms.push(g);
-      });
-      if(!geoms.length){ alert("GeoJSON senza poligoni."); return; }
-      clipGeom = (geoms.length === 1) ? geoms[0] : geometryEngine.union(geoms);
-      bndLayer.removeAll();
-      bndLayer.add(new Graphic({
-        geometry: clipGeom,
-        symbol: { type: "simple-fill", color: [0,0,0,0], outline: { color: [0,0,0,80], width: 1 } }
-      }));
-      await view.goTo(clipGeom.extent.expand(1.05));
-      log("Confini caricati (PT).");
-    }catch(e){
-      console.error(e); alert("Errore caricando confini: " + (e.message||e));
-    }
+    // → costruisci geometria unica robusta
+    const geoms = [];
+    const feats = gj.features || [];
+    feats.forEach(f => {
+      const g = gjGeomToEsri(f.geometry);
+      if(g) geoms.push(g);
+    });
+    if(!geoms.length) throw new Error("GeoJSON senza poligoni.");
+
+    let union = (geoms.length === 1) ? geoms[0] : geometryEngine.union(geoms);
+    clipGeom = geometryEngine.simplify(union) || union;
+
+    // disegna contorno e centra, se possibile
+    bndLayer.removeAll();
+    bndLayer.add(new Graphic({
+      geometry: clipGeom,
+      symbol: { type: "simple-fill", color: [0,0,0,0], outline: { color: [0,0,0,80], width: 1 } }
+    }));
+    try{
+      if(clipGeom && clipGeom.extent){ await view.goTo(clipGeom.extent.expand(1.05)); }
+      else { await view.goTo({ center: [-8,39.6], scale: 240000 }); }
+    }catch(_){}
+    log("Confini caricati (PT).");
   }
 
-  // Applica palette + filtro paesi
+  // Applica palette + filtro spaziale
   document.getElementById("btnApply").onclick = async () => {
     try{
-      log("— Avvio rendering —");      
+      log("— Avvio rendering —");
       const url = document.getElementById("layerUrl").value.trim();
       const classField = document.getElementById("classField").value.trim();
       const paletteObj = JSON.parse(document.getElementById("paletteJson").value || "{}");
@@ -209,10 +208,11 @@ require([
       if(!url || !classField || !paletteObj[paletteKey]){ alert("Compila URL, campo classe e palette."); return; }
 
       if(!fl || fl.url !== url){ if(fl) map.remove(fl); fl = new FeatureLayer({ url, outFields:["*"], title:"CLC2018" }); map.add(fl); await fl.load(); }
-      // non disegnare da lontano: minScale 1:250k
+      // non disegnare da lontano
       fl.minScale = 250000; fl.maxScale = 0;
 
-      // Filtro spaziale (clip)
+      // filtro spaziale (clip) – assicura confini caricati
+      if(!clipGeom) { try{ await loadBoundaries(); }catch(_){} }
       const lv = await view.whenLayerView(fl);
       lv.filter = clipGeom ? { geometry: clipGeom, spatialRelationship: "intersects" } : null;
 
@@ -245,6 +245,7 @@ require([
       const totalArea = Object.values(classAreas).reduce((a,b)=>a+b,0);
       log(`Area totale clip ≈ ${fmtArea(totalArea)}.`);
 
+      // Palette e renderer SENZA outline
       const palette = normalizePalette(paletteObj[paletteKey].colors);
       const classOrder = Object.entries(classAreas).sort((a,b)=>b[1]-a[1]).map(([k])=>k);
       const classToColor = assignColorsByArea(classOrder, classAreas, palette);
@@ -258,8 +259,11 @@ require([
         }))
       };
 
-      // centra sul clip (PT)
-      if(clipGeom){ await view.goTo(clipGeom.extent.expand(1.05)); } else { await view.goTo({ center: [-8,39.6], scale: 240000 }); }
+      // centra sul clip se esiste
+      try{
+        if(clipGeom && clipGeom.extent){ await view.goTo(clipGeom.extent.expand(1.05)); }
+        else { await view.goTo({ center: [-8,39.6], scale: 240000 }); }
+      }catch(_){}
 
       renderLegend(Object.entries(classToColor).map(([value,hex])=>({value,label:value,symbol:{color:hex}})));
       legendWrap.hidden = false;
@@ -308,6 +312,7 @@ require([
     const sum = colors.reduce((s,c)=>s+(+c.weight||0),0)||1;
     return colors.map(c=>({hex:c.hex,w:(c.weight||0)*100/sum}));
   }
+
   function assignColorsByArea(classOrder, classAreas, palette){
     const total = Object.values(classAreas).reduce((a,b)=>a+b,0);
     const buckets = palette.map(p=>({hex:p.hex,target:p.w/100*total,assigned:0}));
@@ -320,6 +325,7 @@ require([
     }
     return mapColor;
   }
+
   function renderLegend(infos){
     legendItems.innerHTML = "";
     infos.slice(0,25).forEach(inf=>{
@@ -332,21 +338,30 @@ require([
       d.append(s,t); legendItems.append(d);
     });
   }
+
   function fmtArea(m2){
     if(!isFinite(m2)) return "—";
     if(m2 >= 1e8) return (m2/1e6).toFixed(1) + " km²";
     if(m2 >= 1e6) return (m2/1e6).toFixed(2) + " km²";
     return Math.round(m2).toLocaleString("it-IT") + " m²";
   }
+
+  // ✅ Conversione GeoJSON → Esri robusta (Polygon + MultiPolygon, con holes)
   function gjGeomToEsri(g){
     if(!g) return null;
+    const sr = { wkid: 4326 }; // GeoJSON è WGS84
     if(g.type === "Polygon"){
-      return { type:"polygon", rings:g.coordinates[0].map(([x,y])=>[x,y]), spatialReference:{wkid:4326} };
+      const rings = g.coordinates.map(ring => ring.map(([x,y]) => [x,y]));
+      return { type: "polygon", rings, spatialReference: sr };
     }
     if(g.type === "MultiPolygon"){
       const rings = [];
-      for(const poly of g.coordinates){ rings.push(...poly[0].map(([x,y])=>[x,y])); }
-      return { type:"polygon", rings, spatialReference:{wkid:4326} };
+      for(const poly of g.coordinates){
+        for(const ring of poly){
+          rings.push(ring.map(([x,y]) => [x,y]));
+        }
+      }
+      return { type: "polygon", rings, spatialReference: sr };
     }
     return null;
   }
