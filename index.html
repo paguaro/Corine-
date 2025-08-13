@@ -87,9 +87,7 @@ require([
 ], (esriConfig,Map,MapView,FeatureLayer,geometryEngine,ScaleBar) => {
 
   // Abilita CORS esplicito verso EEA (prudenziale su GitHub Pages)
-  try{
-    esriConfig.request.corsEnabledServers.push("https://image.discomap.eea.europa.eu");
-  }catch(e){}
+  try{ esriConfig.request.corsEnabledServers.push("https://image.discomap.eea.europa.eu"); }catch(e){}
 
   const logEl = document.getElementById("log");
   const panel = document.getElementById("panel");
@@ -259,7 +257,6 @@ require([
     let num = 0, start = 0;
     const count = await layer.queryFeatureCount().catch(e => { log("queryFeatureCount fallita: "+(e.message||e)); return 0; });
     if(!count){ log("Attenzione: il servizio non ha restituito il conteggio (possibili limitazioni). Continuo a scaricare finché possibile…"); }
-    // loop “aperto”: se count=0 o non affidabile, interrompe quando non arrivano più feature
     while(true){
       const res = await layer.queryFeatures({ where:"1=1", outFields:[classField], returnGeometry:true, start, num:pageSize })
                              .catch(e => { log("queryFeatures fallita: "+(e.message||e)); return {features:[]}; });
@@ -310,6 +307,14 @@ require([
       const t=document.createElement("span"); t.textContent = inf.label || inf.value;
       d.append(s,t); legendItems.append(d);
     });
+  }
+
+  // ✅ MANCAVA QUESTA: formatter area sicuro per Safari/iPhone
+  function fmtArea(m2){
+    if(!isFinite(m2)) return "—";
+    if(m2 >= 1e8) return (m2/1e6).toFixed(1) + " km²";
+    if(m2 >= 1e6) return (m2/1e6).toFixed(2) + " km²";
+    return Math.round(m2).toLocaleString("it-IT") + " m²";
   }
 });
 </script>
