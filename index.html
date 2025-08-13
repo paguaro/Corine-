@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="utf-8" />
-<title>CLC2018 → Palette d’autore (Clip per Paesi)</title>
+<title>CLC2018 → Palette d’autore (Clip PT+ES)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
 <script src="https://js.arcgis.com/4.33/"></script>
@@ -52,20 +52,21 @@
   <!-- Confini (GeoJSON) -->
   <div class="row">
     <label>URL confini (GeoJSON)</label>
+    <!-- Due URL separati da virgola: Portogallo + Spagna -->
     <input id="bndUrl" style="flex:1"
-      value="https://raw.githubusercontent.com/johan/world.geo.json/master/countries/PRT.geo.json" />
+      value="https://raw.githubusercontent.com/johan/world.geo.json/master/countries/PRT.geo.json, https://raw.githubusercontent.com/johan/world.geo.json/master/countries/ESP.geo.json" />
     <button id="btnLoadBnd">Carica confini</button>
   </div>
 
   <div class="row">
     <label>JSON palette</label>
-    <button id="btnDemo">Demo</button>
+    <button id="btnDemo" title="Carica due palette esempio (Van Gogh / Monet)">Demo</button>
     <button id="btnFromUrl">Da URL</button>
   </div>
   <div class="row"><textarea id="paletteJson" placeholder='Incolla qui il JSON delle palette…'></textarea></div>
   <div class="row">
     <label>Palette</label>
-    <select id="paletteSelect" style="flex:1"><option value="">— carica JSON —</option></select>
+    <select id="paletteSelect" style="flex:1"><option value="">— seleziona —</option></select>
   </div>
 
   <div class="row" style="justify-content:flex-end;gap:8px">
@@ -95,7 +96,7 @@ require([
   "esri/geometry/geometryEngine","esri/widgets/ScaleBar"
 ], (esriConfig,Map,MapView,FeatureLayer,GraphicsLayer,Graphic,geometryEngine,ScaleBar) => {
 
-  // CORS prudenziale per il server EEA
+  // CORS prudenziale per EEA
   try{ esriConfig.request.corsEnabledServers.push("https://image.discomap.eea.europa.eu"); }catch(e){}
 
   const logEl = document.getElementById("log");
@@ -106,14 +107,15 @@ require([
   const legendItems = document.getElementById("legendItems");
   const legendBox = document.getElementById("legend");
   const btnLegToggle = document.getElementById("btnLegToggle");
+  const btnApply = document.getElementById("btnApply");
 
   const map = new Map({ basemap: "gray-vector" });
-  const view = new MapView({ container: "viewDiv", map, center: [-8,39.6], zoom: 6, padding: { top: 0, bottom: 0 }});
+  const view = new MapView({ container: "viewDiv", map, center: [-4,39], zoom: 5, padding: { top: 0, bottom: 0 }});
   view.ui.add(new ScaleBar({ view, unit: "metric" }), "bottom-left");
 
   // Layer CLC
   let fl = null;
-  // Layer per disegnare i confini caricati
+  // Layer confini (per visualizzare il clip)
   const bndLayer = new GraphicsLayer({ title: "Confini selezione" });
   map.add(bndLayer);
 
@@ -133,7 +135,7 @@ require([
   };
   function log(m){ logEl.textContent += m+"\\n"; logEl.scrollTop = logEl.scrollHeight; }
 
-  // Demo palette
+  // Palette demo (nessuna selezione automatica)
   document.getElementById("btnDemo").onclick = () => {
     const demo = {
       "van_gogh_starry_night":{ "title":"Van Gogh – Starry Night",
@@ -142,8 +144,8 @@ require([
         "colors":[{"hex":"#567D46","weight":40},{"hex":"#7FB3D5","weight":25},{"hex":"#D4E6F1","weight":15},{"hex":"#A9DFBF","weight":12},{"hex":"#1B4F72","weight":8}]}
     };
     paletteJson.value = JSON.stringify(demo,null,2);
-    populatePaletteSelect(demo);
-    log("Palette demo caricate.");
+    populatePaletteSelect(demo); // non seleziono nulla: resta a scelta tua
+    log("Palette demo caricate (seleziona quella che vuoi).");
   };
   document.getElementById("btnFromUrl").onclick = async () => {
     const url = prompt("URL JSON palette:");
@@ -152,7 +154,7 @@ require([
       const obj = await (await fetch(url)).json();
       paletteJson.value = JSON.stringify(obj,null,2);
       populatePaletteSelect(obj);
-      log("Palette caricate da URL.");
+      log("Palette caricate da URL (seleziona dall'elenco).");
     }catch(e){ alert("Errore caricando il JSON: " + e.message); }
   };
   function populatePaletteSelect(obj){
@@ -161,51 +163,56 @@ require([
     for(const [k,v] of Object.entries(obj)) sel.append(new Option(v.title||k,k));
   }
 
-  // Carica confini PT subito e su click
+  // Stato del clip
   let clipGeom = null;
+
+  // Carica confini PT+ES subito e su click
   document.getElementById("btnLoadBnd").onclick = () => loadBoundaries().catch(e=>alert(e.message||e));
   loadBoundaries().catch(()=>{});
 
   async function loadBoundaries(){
-    const url = document.getElementById("bndUrl").value.trim();
-    if(!url) throw new Error("Inserisci l'URL di un GeoJSON di confini.");
+    const urlsRaw = document.getElementById("bndUrl").value.trim();
+    if(!urlsRaw){ throw new Error("Inserisci uno o più URL (separati da virgola) di GeoJSON di confini."); }
+    const urls = urlsRaw.split(",").map(s=>s.trim()).filter(Boolean);
     logEl.textContent = ""; log("Scarico GeoJSON confini…");
-    const gj = await (await fetch(url)).json();
 
-    // → costruisci geometria unica robusta
+    // scarica tutti i geojson e accumula le geometrie
     const geoms = [];
-    const feats = gj.features || [];
-    feats.forEach(f => {
-      const g = gjGeomToEsri(f.geometry);
-      if(g) geoms.push(g);
-    });
+    for (const u of urls){
+      const gj = await (await fetch(u)).json();
+      const feats = gj.features || [];
+      feats.forEach(f => {
+        const g = gjGeomToEsri(f.geometry);
+        if(g) geoms.push(g);
+      });
+    }
     if(!geoms.length) throw new Error("GeoJSON senza poligoni.");
 
+    // union + simplify → clipGeom robusta
     let union = (geoms.length === 1) ? geoms[0] : geometryEngine.union(geoms);
     clipGeom = geometryEngine.simplify(union) || union;
 
-    // disegna contorno e centra, se possibile
+    // disegna contorno e centra
     bndLayer.removeAll();
     bndLayer.add(new Graphic({
       geometry: clipGeom,
       symbol: { type: "simple-fill", color: [0,0,0,0], outline: { color: [0,0,0,80], width: 1 } }
     }));
-    try{
-      if(clipGeom && clipGeom.extent){ await view.goTo(clipGeom.extent.expand(1.05)); }
-      else { await view.goTo({ center: [-8,39.6], scale: 240000 }); }
-    }catch(_){}
-    log("Confini caricati (PT).");
+    await safeGoToClip();
+    log("Confini caricati (PT+ES).");
   }
 
-  // Applica palette + filtro spaziale
-  document.getElementById("btnApply").onclick = async () => {
+  // Applica palette + filtro spaziale (debounced)
+  btnApply.onclick = async () => {
+    if (btnApply.disabled) return;     // debounce
+    btnApply.disabled = true;
     try{
       log("— Avvio rendering —");
       const url = document.getElementById("layerUrl").value.trim();
       const classField = document.getElementById("classField").value.trim();
       const paletteObj = JSON.parse(document.getElementById("paletteJson").value || "{}");
       const paletteKey = document.getElementById("paletteSelect").value;
-      if(!url || !classField || !paletteObj[paletteKey]){ alert("Compila URL, campo classe e palette."); return; }
+      if(!url || !classField || !paletteObj[paletteKey]){ alert("Compila URL, campo classe e seleziona una palette."); return; }
 
       if(!fl || fl.url !== url){ if(fl) map.remove(fl); fl = new FeatureLayer({ url, outFields:["*"], title:"CLC2018" }); map.add(fl); await fl.load(); }
       // non disegnare da lontano
@@ -259,12 +266,7 @@ require([
         }))
       };
 
-      // centra sul clip se esiste
-      try{
-        if(clipGeom && clipGeom.extent){ await view.goTo(clipGeom.extent.expand(1.05)); }
-        else { await view.goTo({ center: [-8,39.6], scale: 240000 }); }
-      }catch(_){}
-
+      await safeGoToClip();
       renderLegend(Object.entries(classToColor).map(([value,hex])=>({value,label:value,symbol:{color:hex}})));
       legendWrap.hidden = false;
       togglePanel(false);
@@ -273,6 +275,8 @@ require([
     }catch(err){
       console.error(err);
       alert("Errore: "+(err.message||err));
+    } finally {
+      btnApply.disabled = false;
     }
   };
 
@@ -282,7 +286,7 @@ require([
     const a = document.createElement("a"); a.href = shot.dataUrl; a.download = "clc2018_palette.png"; a.click();
   };
 
-  // Helpers
+  // Helpers ----------------------------------------------------
   async function computeAreasClient(layer, classField, geom){
     const out = {};
     const pageSize = 4000;
@@ -346,18 +350,32 @@ require([
     return Math.round(m2).toLocaleString("it-IT") + " m²";
   }
 
-  // ✅ Conversione GeoJSON → Esri robusta (Polygon + MultiPolygon, con holes)
+  // centratura sicura sul clip (niente .extent diretto)
+  async function safeGoToClip(){
+    try {
+      if (clipGeom) {
+        await view.goTo({ target: clipGeom, padding: 20 });
+        if (view.scale > 240000) await view.goTo({ scale: 240000 });
+      } else {
+        await view.goTo({ center: [-8, 39.6], scale: 240000 });
+      }
+    } catch(e) {
+      await view.goTo({ center: [-8, 39.6], scale: 240000 }).catch(()=>{});
+    }
+  }
+
+  // GeoJSON → Esri (Polygon/MultiPolygon con holes)
   function gjGeomToEsri(g){
     if(!g) return null;
-    const sr = { wkid: 4326 }; // GeoJSON è WGS84
+    const sr = { wkid: 4326 }; // GeoJSON WGS84
     if(g.type === "Polygon"){
       const rings = g.coordinates.map(ring => ring.map(([x,y]) => [x,y]));
       return { type: "polygon", rings, spatialReference: sr };
     }
     if(g.type === "MultiPolygon"){
       const rings = [];
-      for(const poly of g.coordinates){
-        for(const ring of poly){
+      for (const poly of g.coordinates){
+        for (const ring of poly){
           rings.push(ring.map(([x,y]) => [x,y]));
         }
       }
