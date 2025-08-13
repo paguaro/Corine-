@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="utf-8" />
-<title>CLC2018 → Palette d’autore (Mobile)</title>
+<title>CLC2018 → Palette d’autore (Mobile + Paesi)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
 <script src="https://js.arcgis.com/4.33/"></script>
@@ -16,7 +16,7 @@
          padding:var(--panel-pad);width:var(--panel-w);max-height:70vh;overflow:auto}
   @media (min-width:801px){ .panel{ top:calc(10px + var(--safe-top)); left:10px } }
   @media (max-width:800px){ .panel{ width:min(92vw,520px); left:50%; transform:translateX(-50%); bottom:calc(8px + var(--safe-bottom)); max-height:55vh } }
-  .row{display:flex;gap:6px;margin:6px 0;align-items:center}
+  .row{display:flex;gap:6px;margin:6px 0;align-items:center; flex-wrap: wrap;}
   .row label{min-width:110px;font-size:13px}
   input,select,button{font-size:14px}
   textarea{width:100%;height:120px;font:12px ui-monospace,Menlo,Consolas,monospace}
@@ -24,10 +24,11 @@
   #legendWrap{position:absolute;z-index:12;right:8px;bottom:calc(8px + var(--safe-bottom));background:#fff;border-radius:10px;padding:8px;
               box-shadow:0 2px 8px rgba(0,0,0,.15);max-width:300px;font-size:12px}
   .legend-item{display:flex;gap:8px;align-items:center;margin:4px 0}
-  .sw{width:14px;height:14px;border:1px solid #0003;border-radius:2px}
+  .sw{width:14px;height:14px;border:1px solid #0000;border-radius:2px}
   .legend-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600}
   .toggle{border:none;background:#f3f3f3;border-radius:6px;padding:4px 8px;cursor:pointer}
   #log{font:12px ui-monospace,monospace;background:#fafafa;border:1px solid #eee;border-radius:6px;max-height:140px;overflow:auto;white-space:pre-wrap;padding:6px}
+  .multiselect{min-width:160px; max-width:100%; height:86px}
   @media (max-width:390px){ .row label{min-width:96px} input,select,button{font-size:13px} }
 </style>
 </head>
@@ -44,9 +45,21 @@
     <input id="layerUrl" style="flex:1"
       value="https://image.discomap.eea.europa.eu/arcgis/rest/services/Corine/CLC2018_WM/MapServer/0" />
   </div>
+
   <div class="row">
     <label>Campo classe</label>
     <input id="classField" style="flex:1" value="Code_18" />
+  </div>
+
+  <!-- nuova sezione Paese/i -->
+  <div class="row">
+    <label>Campo paese</label>
+    <select id="countryField" style="flex:1"><option value="">(rilevo dopo load)</option></select>
+  </div>
+  <div class="row">
+    <label>Paesi</label>
+    <select id="countryList" class="multiselect" multiple></select>
+    <button id="btnDetectCountries" title="Rileva codici paese">Rileva</button>
   </div>
 
   <div class="row">
@@ -86,7 +99,6 @@ require([
   "esri/geometry/geometryEngine","esri/widgets/ScaleBar"
 ], (esriConfig,Map,MapView,FeatureLayer,geometryEngine,ScaleBar) => {
 
-  // Abilita CORS esplicito verso EEA (prudenziale su GitHub Pages)
   try{ esriConfig.request.corsEnabledServers.push("https://image.discomap.eea.europa.eu"); }catch(e){}
 
   const logEl = document.getElementById("log");
@@ -98,6 +110,10 @@ require([
   const legendBox = document.getElementById("legend");
   const btnLegToggle = document.getElementById("btnLegToggle");
 
+  const countryFieldSel = document.getElementById("countryField");
+  const countryListSel  = document.getElementById("countryList");
+  const btnDetectCountries = document.getElementById("btnDetectCountries");
+
   const isMobile = window.matchMedia("(max-width:800px)").matches;
   function log(m){ logEl.textContent += m+"\\n"; logEl.scrollTop = logEl.scrollHeight; }
 
@@ -107,7 +123,7 @@ require([
 
   let fl = null;
 
-  // Pannello show/hide
+  // pannello
   const togglePanel = (show) => {
     const want = (typeof show === "boolean") ? show : panel.hidden;
     panel.hidden = !want;
@@ -116,14 +132,13 @@ require([
   fab.onclick = () => togglePanel(true);
   btnClose.onclick = () => togglePanel(false);
 
-  // Legenda compressibile
   btnLegToggle.onclick = () => {
     const collapsed = legendBox.style.display === "none";
     legendBox.style.display = collapsed ? "block" : "none";
     btnLegToggle.textContent = collapsed ? "Minimizza" : "Massimizza";
   };
 
-  // Palette demo
+  // demo palette
   document.getElementById("btnDemo").onclick = () => {
     const demo = {
       "van_gogh_starry_night":{ "title":"Van Gogh – Starry Night",
@@ -136,7 +151,6 @@ require([
     log("Palette demo caricate.");
   };
 
-  // Palette da URL
   document.getElementById("btnFromUrl").onclick = async () => {
     const url = prompt("URL JSON palette:");
     if(!url) return;
@@ -154,6 +168,52 @@ require([
     for(const [k,v] of Object.entries(obj)) sel.append(new Option(v.title||k,k));
   }
 
+  // Rilevazione campo paese + codici
+  btnDetectCountries.onclick = async () => {
+    try{
+      const url = document.getElementById("layerUrl").value.trim();
+      if(!url){ alert("Inserisci il Layer URL"); return; }
+      if(!fl){
+        fl = new FeatureLayer({ url, outFields:["*"], title:"CLC2018" });
+        map.add(fl);
+        await fl.load();
+      }
+      // suggerisci campo paese dai nomi noti
+      const candidates = ["CNTR_CODE","CNTR_ID","CNTR_CODE_2","Country","COUNTRY","ISO2","ISO3","ISO_CODE","NUTS_ID","NATION"];
+      let countryField = candidates.find(c => fl.fields.some(f => f.name.toUpperCase() === c)) ||
+                         fl.fields.find(f => /^(cntr|country|iso)/i.test(f.name))?.name || "";
+      if(!countryField){ alert("Non trovo un campo paese. Scegline uno manualmente dal menu (dopo carico i campi)."); }
+      countryFieldSel.innerHTML = "";
+      fl.fields.forEach(f => countryFieldSel.append(new Option(f.name, f.name)));
+      if(countryField) countryFieldSel.value = countryField;
+
+      // distinct codici paese
+      const field = countryFieldSel.value;
+      if(!field){ alert("Seleziona un campo paese."); return; }
+      log("Rilevo codici paese…");
+      const stats = await fl.queryFeatures({
+        where: "1=1",
+        outFields: [field],
+        groupByFieldsForStatistics: [field],
+        outStatistics: [{ onStatisticField: "1", outStatisticFieldName: "cnt", statisticType: "count" }],
+        returnGeometry: false
+      });
+      const values = (stats.features||[])
+        .map(f => String(f.attributes[field]))
+        .filter(v => v && v !== "null" && v !== "undefined")
+        .sort((a,b)=>a.localeCompare(b));
+      countryListSel.innerHTML = "";
+      values.forEach(v => {
+        const opt = new Option(v, v);
+        if(v === "PT") opt.selected = true; // default: Portogallo
+        countryListSel.append(opt);
+      });
+      log(`Trovati ${values.length} codici paese. (Selezionato: PT)`);
+    }catch(e){
+      console.error(e); alert("Errore rilevando i paesi: " + (e.message||e));
+    }
+  };
+
   // Applica
   document.getElementById("btnApply").onclick = async () => {
     try{
@@ -164,28 +224,33 @@ require([
       const paletteKey = document.getElementById("paletteSelect").value;
       if(!url || !classField || !paletteObj[paletteKey]){ alert("Compila URL, campo classe e palette."); return; }
 
-      // Crea/ricarica FeatureLayer
-      if(fl) map.remove(fl);
-      fl = new FeatureLayer({ url, outFields: ["*"], title: "CLC2018" });
-      map.add(fl);
+      // (Re)load layer
+      if(!fl || fl.url !== url){ if(fl) map.remove(fl); fl = new FeatureLayer({ url, outFields:["*"], title:"CLC2018" }); map.add(fl); await fl.load(); }
 
-      await fl.load();
-      log("Layer caricato.");
+      // filtro paesi scelti
+      const countryField = countryFieldSel.value;
+      const chosen = Array.from(countryListSel.selectedOptions).map(o=>o.value);
+      const whereCountries = (countryField && chosen.length) ? `${countryField} IN (${chosen.map(v=>"'"+v.replace(/'/g,"''")+"'").join(",")})` : "1=1";
+      fl.definitionExpression = whereCountries;
+      log("Filtro paesi: " + (whereCountries === "1=1" ? "(nessuno)" : whereCountries));
 
-      // Forza scale “visibili”
+      // forzo scale visibili e centro su PT se presente tra i selezionati (altrimenti extent filtro)
       try{ fl.minScale = 0; fl.maxScale = 0; }catch(e){}
-      const ext = await fl.queryExtent();
-      if(ext && ext.extent){
-        await view.goTo({ target: ext.extent, scale: 240000 }); // < 1:250k
-      }
+      // centrami sul Portogallo come default
+      await view.goTo({ center: [-8.0, 39.6], scale: 240000 }); // scala < 1:250k
+      // poi, se riesco, vai all'estensione filtrata
+      try{
+        const ext = await fl.queryExtent({ where: whereCountries });
+        if(ext && ext.extent){ await view.goTo(ext.extent.expand(1.05)); }
+      }catch(e){ /* se fallisce, resta sul centro PT */ }
 
-      // 1) server-side statistics per somma area per classe
+      // 1) statistiche server area per classe con filtro paesi
       let classAreas = null, statsOk = false;
       try{
         log("Calcolo aree per classe (server)…");
         const statDef = [{ onStatisticField: "Shape_Area", outStatisticFieldName: "sum_area", statisticType: "sum" }];
         const res = await fl.queryFeatures({
-          where: "1=1",
+          where: whereCountries,
           outFields: [classField],
           groupByFieldsForStatistics: [classField],
           outStatistics: statDef,
@@ -203,39 +268,35 @@ require([
         log("Statistiche server fallite: " + (e.message||e));
       }
 
-      // 2) Fallback client: paginazione + geodesicArea
+      // 2) fallback client con filtro paesi
       if(!statsOk){
-        log("Fallback client (può essere più lento) …");
-        classAreas = await computeAreasClient(fl, classField);
+        log("Fallback client (più lento)…");
+        classAreas = await computeAreasClient(fl, classField, whereCountries);
         log(`Aree client calcolate: ${Object.keys(classAreas).length} classi.`);
       }
 
       const totalArea = Object.values(classAreas).reduce((a,b)=>a+b,0);
       log(`Area totale ≈ ${fmtArea(totalArea)}.`);
 
-      // Palette normalizzata e classi ordinate per area
+      // palette e renderer senza outline
       const palette = normalizePalette(paletteObj[paletteKey].colors);
       const classOrder = Object.entries(classAreas).sort((a,b)=>b[1]-a[1]).map(([k])=>k);
-
-      // Assegnazione proporzionale per area cumulata
       const classToColor = assignColorsByArea(classOrder, classAreas, palette);
 
-      // Renderer
       fl.renderer = {
         type: "unique-value",
         field: classField,
         uniqueValueInfos: Object.entries(classToColor).map(([value, hex]) => ({
           value, label: value,
-          symbol: { type: "simple-fill", color: hex, outline: { color: [0,0,0,40], width: 0.25 } }
+          symbol: { type: "simple-fill", color: hex, outline: { color: [0,0,0,0], width: 0 } }  // ← niente bordo
         }))
       };
 
       renderLegend(Object.entries(classToColor).map(([value,hex])=>({value,label:value,symbol:{color:hex}})));
       legendWrap.hidden = false;
 
-      // Su mobile richiudi il cassetto per liberare la mappa
       togglePanel(false);
-      log("Palette applicata con proporzioni del quadro. ✅");
+      log("Palette applicata (senza outline) con proporzioni del quadro. ✅");
 
     } catch(err){
       console.error(err);
@@ -244,21 +305,19 @@ require([
     }
   };
 
-  // Screenshot PNG
+  // Screenshot
   document.getElementById("btnShot").onclick = async () => {
     const shot = await view.takeScreenshot({ format:"png", quality:100 });
     const a = document.createElement("a"); a.href = shot.dataUrl; a.download = "clc2018_palette.png"; a.click();
   };
 
   // Helpers
-  async function computeAreasClient(layer, classField){
+  async function computeAreasClient(layer, classField, where){
     const out = {};
     const pageSize = 5000;
-    let num = 0, start = 0;
-    const count = await layer.queryFeatureCount().catch(e => { log("queryFeatureCount fallita: "+(e.message||e)); return 0; });
-    if(!count){ log("Attenzione: il servizio non ha restituito il conteggio (possibili limitazioni). Continuo a scaricare finché possibile…"); }
+    let start = 0, tot = 0;
     while(true){
-      const res = await layer.queryFeatures({ where:"1=1", outFields:[classField], returnGeometry:true, start, num:pageSize })
+      const res = await layer.queryFeatures({ where: where||"1=1", outFields:[classField], returnGeometry:true, start, num:pageSize })
                              .catch(e => { log("queryFeatures fallita: "+(e.message||e)); return {features:[]}; });
       const arr = res.features || [];
       if(arr.length===0) break;
@@ -268,10 +327,9 @@ require([
         try{ a = Math.abs(geometryEngine.geodesicArea(f.geometry,"square-meters")); }catch(e){ a = 0; }
         out[cls] = (out[cls]||0) + (isFinite(a)?a:0);
       });
-      num += arr.length;
-      log(`  • Batch ${start+1}–${start+arr.length} (tot: ${num})`);
+      tot += arr.length;
+      log(`  • Batch ${start+1}–${start+arr.length} (tot: ${tot})`);
       start += arr.length;
-      if(count && start >= count) break;
       await new Promise(r=>setTimeout(r,0));
     }
     return out;
@@ -309,7 +367,6 @@ require([
     });
   }
 
-  // ✅ MANCAVA QUESTA: formatter area sicuro per Safari/iPhone
   function fmtArea(m2){
     if(!isFinite(m2)) return "—";
     if(m2 >= 1e8) return (m2/1e6).toFixed(1) + " km²";
