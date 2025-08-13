@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <title>CORINE → Palette d’autore (WFS JSON)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover" />
+  <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.33/"></script>
+  <style>
+    html, body, #viewDiv { height: 100%; margin: 0; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    .panel {
+      position: absolute; top: 10px; left: 10px; z-index: 10;
+      background: rgba(255,255,255,.96); padding: 10px; border-radius: 10px; width: 420px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.15); font-size: 14px;
+    }
+    .row { display: flex; gap: 6px; margin: 6px 0; align-items: center; }
+    .row label { min-width: 120px; }
+    input, select, button { font-size: 14px; }
+    textarea { width: 100%; height: 130px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+    #legend { position: absolute; bottom: 10px; right: 10px; z-index: 10;
+      background: rgba(255,255,255,.96); padding: 10px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.15); max-width: 280px; font-size: 12px;}
+    .legend-item { display:flex; align-items:center; gap:8px; margin:4px 0; }
+    .sw { width:14px; height:14px; border:1px solid #0003; border-radius:2px; }
+    #log { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; background: #fafafa; border: 1px solid #eee; padding: 6px; border-radius: 6px; max-height: 140px; overflow: auto;}
+  </style>
+</head>
+<body>
+  <div id="viewDiv"></div>
+
+  <div class="panel">
+    <div><strong>CORINE → Palette d’autore (WFS)</strong></div>
+
+    <div class="row">
+      <label>WFS Capabilities</label>
+      <input id="capUrl" type="text" style="flex:1"
+        value="https://geo2.dgterritorio.gov.pt/geoserver/CLC/wfs?service=WFS&version=2.0.0&request=GetCapabilities" />
+    </div>
+    <div class="row">
+      <button id="btnFind">Trova layer</button>
+      <select id="typeSelect" style="flex:1"><option value="">— scegli layer —</option></select>
+    </div>
+    <div class="row">
+      <label>Campo classe</label>
+      <select id="fieldSelect" style="flex:1"><option value="">— suggerimenti dopo Describe —</option></select>
+    </div>
+
+    <div class="row">
+      <label>JSON palette</label>
+      <button id="loadDemo">Demo</button>
+      <button id="loadUrl">Da URL</button>
+    </div>
+    <div class="row">
+      <textarea id="paletteJson" placeholder='Incolla qui il JSON delle palette…'></textarea>
+    </div>
+    <div class="row">
+      <label>Palette</label>
+      <select id="paletteSelect" style="flex:1"><option value="">— carica JSON —</option></select>
+    </div>
+
+    <div class="row">
+      <button id="btnApply">Calcola & Applica</button>
+      <button id="btnShot">Esporta PNG</button>
+    </div>
+
+    <div id="log"></div>
+  </div>
+
+  <div id="legend" hidden>
+    <div><strong>Legenda (prime 25)</strong></div>
+    <div id="legendItems"></div>
+  </div>
+
+  <script>
+  require([
+    "esri/Map", "esri/views/MapView", "esri/Graphic",
+    "esri/layers/FeatureLayer", "esri/geometry/geometryEngine",
+    "esri/widgets/ScaleBar"
+  ], (Map, MapView, Graphic, FeatureLayer, geometryEngine, ScaleBar) => {
+
+    const logEl = document.getElementById("log");
+    function log(m){ logEl.textContent += m + "\\n"; logEl.scrollTop = logEl.scrollHeight; }
+
+    const map = new Map({ basemap: "gray-vector" });
+    const view = new MapView({ container: "viewDiv", map, center: [-8, 39.6], zoom: 6 });
+    view.ui.add(new ScaleBar({ view, unit: "metric" }), "bottom-left");
+
+    let fl = null; // FeatureLayer client-side
+
+    // ---- Palette demo ----
+    document.getElementById("loadDemo").addEventListener("click", () => {
+      const demo = {
+        "van_gogh_starry_night": {
+          "title": "Van Gogh – Starry Night",
+          "colors": [
+            {"hex":"#2C3E50","weight":35},
+            {"hex":"#2980B9","weight":30},
+            {"hex":"#F1C40F","weight":20},
+            {"hex":"#27AE60","weight":10},
+            {"hex":"#ECF0F1","weight":5}
+          ]
+        },
+        "monet_water_lilies": {
+          "title": "Monet – Water Lilies",
+          "colors": [
+            {"hex":"#567D46","weight":40},
+            {"hex":"#7FB3D5","weight":25},
+            {"hex":"#D4E6F1","weight":15},
+            {"hex":"#A9DFBF","weight":12},
+            {"hex":"#1B4F72","weight":8}
+          ]
+        }
+      };
+      document.getElementById("paletteJson").value = JSON.stringify(demo, null, 2);
+      populatePaletteSelect(demo);
+      log("Palette demo caricate.");
+    });
+
+    document.getElementById("loadUrl").addEventListener("click", async () => {
+      const url = prompt("URL JSON palette:");
+      if(!url) return;
+      const res = await fetch(url);
+      const obj = await res.json();
+      document.getElementById("paletteJson").value = JSON.stringify(obj, null, 2);
+      populatePaletteSelect(obj);
+      log("Palette caricate da URL.");
+    });
+
+    function populatePaletteSelect(obj){
+      const sel = document.getElementById("paletteSelect");
+      sel.innerHTML = "<option value=''>— seleziona —</option>";
+      for(const [k, v] of Object.entries(obj)){
+        sel.append(new Option(v.title || k, k));
+      }
+    }
+
+    // ---- Trova layer dal GetCapabilities ----
+    document.getElementById("btnFind").addEventListener("click", async () => {
+      const capUrl = document.getElementById("capUrl").value.trim();
+      if(!capUrl){ alert("Inserisci un URL GetCapabilities WFS"); return; }
+      try {
+        logEl.textContent = "";
+        log("Scarico GetCapabilities…");
+        const txt = await (await fetch(capUrl)).text();
+
+        // parse XML minimale per i typeName
+        const dom = new DOMParser().parseFromString(txt, "text/xml");
+        const nodes = dom.querySelectorAll("FeatureTypeList > FeatureType > Name, WFS_Capabilities FeatureType Name");
+        const types = Array.from(nodes).map(n => n.textContent).filter(Boolean);
+
+        const sel = document.getElementById("typeSelect");
+        sel.innerHTML = "<option value=''>— scegli layer —</option>";
+        types.forEach(t => sel.append(new Option(t, t)));
+        log(`Trovati ${types.length} layer.`);
+
+        // Quando scegli un layer → DescribeFeatureType per popolare i campi
+        sel.onchange = async () => {
+          const typeName = sel.value;
+          if(!typeName) return;
+          const base = capUrl.split("?")[0] + "?service=WFS&version=2.0.0";
+          const dft = `${base}&request=DescribeFeatureType&typeName=${encodeURIComponent(typeName)}`;
+          log(`DescribeFeatureType per ${typeName}…`);
+          const dtxt = await (await fetch(dft)).text();
+          const ddom = new DOMParser().parseFromString(dtxt, "text/xml");
+
+          const fields = Array.from(ddom.querySelectorAll("xsd\\:element, element"))
+            .map(e => e.getAttribute("name"))
+            .filter(Boolean);
+
+          const fsel = document.getElementById("fieldSelect");
+          fsel.innerHTML = "<option value=''>— seleziona campo classe —</option>";
+          // suggerimenti tipici CLC
+          const preferred = ["code_18","code_12","CLC_CODE","CLC12","CLC2018","level3","class","classe","code"];
+          const sorted = [...new Set([...preferred.filter(p=>fields.includes(p)), ...fields])];
+          sorted.forEach(f => fsel.append(new Option(f, f)));
+          log(`Campi disponibili: ${fields.length}. Scegli il campo di classe (es. code_18/CLC_CODE).`);
+        };
+
+      } catch(e){
+        console.error(e);
+        alert("Errore nel GetCapabilities (CORS o URL non raggiungibile). Prova da browser/https o usa una VPN.");
+      }
+    });
+
+    // ---- Applica palette: scarica features (paginato), calcola aree, colora ----
+    document.getElementById("btnApply").addEventListener("click", async () => {
+      try {
+        const capUrl = document.getElementById("capUrl").value.trim();
+        const typeName = document.getElementById("typeSelect").value.trim();
+        const classField = document.getElementById("fieldSelect").value.trim();
+        const paletteObj = JSON.parse(document.getElementById("paletteJson").value || "{}");
+        const paletteKey = document.getElementById("paletteSelect").value;
+
+        if(!capUrl || !typeName || !classField || !paletteObj[paletteKey]){
+          alert("Compila: Capabilities, layer, campo classe e palette.");
+          return;
+        }
+
+        const base = capUrl.split("?")[0] + "?service=WFS&version=2.0.0";
+        let startIndex = 0, count = 5000;
+        let totalRead = 0, feats = [];
+
+        logEl.textContent = "";
+        log("Scarico features in GeoJSON (paginato)…");
+
+        while(true){
+          const url = `${base}&request=GetFeature&typeName=${encodeURIComponent(typeName)}&outputFormat=application/json&count=${count}&startIndex=${startIndex}`;
+          const res = await fetch(url);
+          if(!res.ok) throw new Error("GetFeature non OK: " + res.status);
+          const gj = await res.json();
+          const arr = gj.features || [];
+          if(arr.length === 0) break;
+          feats.push(...arr);
+          totalRead += arr.length;
+          log(`  • Batch ${startIndex+1}–${startIndex + arr.length} (tot: ${totalRead})`);
+          startIndex += arr.length;
+          if(arr.length < count) break; // finito
+          await new Promise(r=>setTimeout(r,0));
+        }
+
+        if(!feats.length){ alert("Nessuna feature ricevuta."); return; }
+        log(`Totale features: ${feats.length}. Calcolo aree per classe…`);
+
+        // Calcolo aree per classe, preparo sorgente client-side
+        const classAreas = {};
+        const graphics = feats.map(f => {
+          const cls = ((f.properties?.[classField]) ?? "ND") + "";
+          const geom = gjToEsriPolygon(f.geometry);
+          let area = 0;
+          if(geom) {
+            try { area = Math.abs(geometryEngine.geodesicArea(geom, "square-meters")); } catch(e){ area = 0; }
+          }
+          classAreas[cls] = (classAreas[cls] || 0) + (isFinite(area) ? area : 0);
+          return new Graphic({
+            geometry: geom,
+            attributes: { ...f.properties, _cls: cls }
+          });
+        });
+
+        const totalArea = Object.values(classAreas).reduce((a,b)=>a+b,0);
+        log(`Classi: ${Object.keys(classAreas).length}. Area totale ≈ ${fmtArea(totalArea)}.`);
+
+        // Palette normalizzata
+        const palette = normalizePalette(paletteObj[paletteKey].colors);
+
+        // Ordine classi per area desc
+        const classOrder = Object.entries(classAreas).sort((a,b)=>b[1]-a[1]).map(([k])=>k);
+
+        // Assegnazione proporzionale
+        const classToColor = assignColorsByArea(classOrder, classAreas, palette);
+
+        // Crea/aggiorna FeatureLayer client-side
+        if(fl) map.remove(fl);
+        fl = new FeatureLayer({
+          source: graphics,
+          objectIdField: "OID__",
+          fields: [
+            {name: "OID__", type: "oid"},
+            ...inferFields(feats)
+          ],
+          renderer: {
+            type: "unique-value",
+            field: "_cls",
+            uniqueValueInfos: Object.entries(classToColor).map(([value, hex]) => ({
+              value, label: value,
+              symbol: { type: "simple-fill", color: hex, outline: { color: [0,0,0,40], width: 0.25 } }
+            }))
+          },
+          title: paletteObj[paletteKey].title || paletteKey
+        });
+        map.add(fl);
+
+        const ext = await fl.queryExtent();
+        if(ext && ext.extent) view.goTo(ext.extent.expand(1.05));
+
+        renderLegend(Object.entries(classToColor).map(([value, hex]) => ({
+          value, symbol: { color: hex }, label: value
+        })));
+
+        log("Palette applicata con proporzioni d’autore. ✅");
+
+      } catch(e){
+        console.error(e);
+        alert("Errore: " + e.message);
+      }
+    });
+
+    // Screenshot
+    document.getElementById("btnShot").addEventListener("click", async () => {
+      const shot = await view.takeScreenshot({ format: "png", quality: 100 });
+      const a = document.createElement("a");
+      a.href = shot.dataUrl;
+      a.download = "corine_palette.png";
+      a.click();
+    });
+
+    // ---------- Helpers ----------
+
+    function normalizePalette(colors){
+      const sum = colors.reduce((s,c)=> s + (+c.weight || 0), 0) || 1;
+      return colors.map(c => ({ hex: c.hex, w: (c.weight || 0) * 100 / sum }));
+    }
+
+    function assignColorsByArea(classOrder, classAreas, palette){
+      const total = Object.values(classAreas).reduce((a,b)=>a+b,0);
+      const buckets = palette.map(p => ({ hex: p.hex, target: p.w/100 * total, assigned: 0 }));
+      const mapColor = {};
+      let i = 0;
+      for(const cls of classOrder){
+        const a = classAreas[cls];
+        while(i < buckets.length - 1 && buckets[i].assigned + a > buckets[i].target * 1.02) i++;
+        mapColor[cls] = buckets[i].hex;
+        buckets[i].assigned += a;
+      }
+      return mapColor;
+    }
+
+    function renderLegend(infos){
+      const leg = document.getElementById("legend");
+      const box = document.getElementById("legendItems");
+      leg.hidden = false; box.innerHTML = "";
+      infos.slice(0,25).forEach(inf => {
+        const d = document.createElement("div"); d.className = "legend-item";
+        const s = document.createElement("span"); s.className = "sw"; s.style.background = toCssColor(inf.symbol.color);
+        const t = document.createElement("span"); t.textContent = inf.label || inf.value;
+        d.append(s,t); box.append(d);
+      });
+    }
+    function toCssColor(c){ return Array.isArray(c) ? `rgba(${c[0]},${c[1]},${c[2]},${(c[3]??255)/255})` : c; }
+    function fmtArea(m2){
+      if(m2 > 1e8) return (m2/1e6).toFixed(1) + " km²";
+      if(m2 > 1e6) return (m2/1e6).toFixed(2) + " km²";
+      return m2.toLocaleString("it-IT") + " m²";
+    }
+
+    // Converte GeoJSON Polygon/MultiPolygon → esri geometry
+    function gjToEsriPolygon(geom){
+      if(!geom) return null;
+      if(geom.type === "Polygon"){
+        return { type: "polygon", rings: geom.coordinates[0].map(([x,y])=>[x,y]), spatialReference: { wkid: 4326 } };
+      }
+      if(geom.type === "MultiPolygon"){
+        // uniamo gli anelli (ok per rendering & area)
+        const rings = [];
+        for(const poly of geom.coordinates){
+          rings.push(...poly[0].map(([x,y])=>[x,y]));
+        }
+        return { type: "polygon", rings, spatialReference: { wkid: 4326 } };
+      }
+      return null;
+    }
+
+    // crea schema campi dal primo feature (per FeatureLayer client-side)
+    function inferFields(features){
+      const props = features[0]?.properties || {};
+      return Object.keys(props).map(k => ({ name: k, type: typeof props[k] === "number" ? "double" : "string" }));
+    }
+  });
+  </script>
+</body>
+</html>
