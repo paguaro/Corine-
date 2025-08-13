@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="utf-8" />
-<title>CLC2018 → Palette d’autore (Mobile + Paesi)</title>
+<title>CLC2018 → Palette d’autore (Clip per Paesi)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
 <script src="https://js.arcgis.com/4.33/"></script>
@@ -28,7 +28,6 @@
   .legend-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600}
   .toggle{border:none;background:#f3f3f3;border-radius:6px;padding:4px 8px;cursor:pointer}
   #log{font:12px ui-monospace,monospace;background:#fafafa;border:1px solid #eee;border-radius:6px;max-height:140px;overflow:auto;white-space:pre-wrap;padding:6px}
-  .multiselect{min-width:160px; max-width:100%; height:86px}
   @media (max-width:390px){ .row label{min-width:96px} input,select,button{font-size:13px} }
 </style>
 </head>
@@ -45,21 +44,17 @@
     <input id="layerUrl" style="flex:1"
       value="https://image.discomap.eea.europa.eu/arcgis/rest/services/Corine/CLC2018_WM/MapServer/0" />
   </div>
-
   <div class="row">
     <label>Campo classe</label>
     <input id="classField" style="flex:1" value="Code_18" />
   </div>
 
-  <!-- nuova sezione Paese/i -->
+  <!-- Confini (GeoJSON) -->
   <div class="row">
-    <label>Campo paese</label>
-    <select id="countryField" style="flex:1"><option value="">(rilevo dopo load)</option></select>
-  </div>
-  <div class="row">
-    <label>Paesi</label>
-    <select id="countryList" class="multiselect" multiple></select>
-    <button id="btnDetectCountries" title="Rileva codici paese">Rileva</button>
+    <label>URL confini (GeoJSON)</label>
+    <input id="bndUrl" style="flex:1"
+      value="https://raw.githubusercontent.com/johan/world.geo.json/master/countries/PRT.geo.json" />
+    <button id="btnLoadBnd">Carica confini</button>
   </div>
 
   <div class="row">
@@ -96,8 +91,9 @@
 require([
   "esri/config",
   "esri/Map","esri/views/MapView","esri/layers/FeatureLayer",
+  "esri/layers/GraphicsLayer","esri/Graphic",
   "esri/geometry/geometryEngine","esri/widgets/ScaleBar"
-], (esriConfig,Map,MapView,FeatureLayer,geometryEngine,ScaleBar) => {
+], (esriConfig,Map,MapView,FeatureLayer,GraphicsLayer,Graphic,geometryEngine,ScaleBar) => {
 
   try{ esriConfig.request.corsEnabledServers.push("https://image.discomap.eea.europa.eu"); }catch(e){}
 
@@ -110,20 +106,18 @@ require([
   const legendBox = document.getElementById("legend");
   const btnLegToggle = document.getElementById("btnLegToggle");
 
-  const countryFieldSel = document.getElementById("countryField");
-  const countryListSel  = document.getElementById("countryList");
-  const btnDetectCountries = document.getElementById("btnDetectCountries");
-
-  const isMobile = window.matchMedia("(max-width:800px)").matches;
-  function log(m){ logEl.textContent += m+"\\n"; logEl.scrollTop = logEl.scrollHeight; }
-
   const map = new Map({ basemap: "gray-vector" });
   const view = new MapView({ container: "viewDiv", map, center: [-8,39.6], zoom: 6, padding: { top: 0, bottom: 0 }});
   view.ui.add(new ScaleBar({ view, unit: "metric" }), "bottom-left");
 
+  // Layer CLC
   let fl = null;
+  // Layer per mostrare i confini caricati
+  const bndLayer = new GraphicsLayer({ title: "Confini selezione" });
+  map.add(bndLayer);
 
-  // pannello
+  // Pannello
+  const isMobile = window.matchMedia("(max-width:800px)").matches;
   const togglePanel = (show) => {
     const want = (typeof show === "boolean") ? show : panel.hidden;
     panel.hidden = !want;
@@ -131,14 +125,15 @@ require([
   };
   fab.onclick = () => togglePanel(true);
   btnClose.onclick = () => togglePanel(false);
-
   btnLegToggle.onclick = () => {
     const collapsed = legendBox.style.display === "none";
     legendBox.style.display = collapsed ? "block" : "none";
     btnLegToggle.textContent = collapsed ? "Minimizza" : "Massimizza";
   };
 
-  // demo palette
+  function log(m){ logEl.textContent += m+"\\n"; logEl.scrollTop = logEl.scrollHeight; }
+
+  // Demo palette
   document.getElementById("btnDemo").onclick = () => {
     const demo = {
       "van_gogh_starry_night":{ "title":"Van Gogh – Starry Night",
@@ -150,7 +145,6 @@ require([
     populatePaletteSelect(demo);
     log("Palette demo caricate.");
   };
-
   document.getElementById("btnFromUrl").onclick = async () => {
     const url = prompt("URL JSON palette:");
     if(!url) return;
@@ -161,124 +155,96 @@ require([
       log("Palette caricate da URL.");
     }catch(e){ alert("Errore caricando il JSON: " + e.message); }
   };
-
   function populatePaletteSelect(obj){
     const sel = document.getElementById("paletteSelect");
     sel.innerHTML = "<option value=''>— seleziona —</option>";
     for(const [k,v] of Object.entries(obj)) sel.append(new Option(v.title||k,k));
   }
 
-  // Rilevazione campo paese + codici
-  btnDetectCountries.onclick = async () => {
-    try{
-      const url = document.getElementById("layerUrl").value.trim();
-      if(!url){ alert("Inserisci il Layer URL"); return; }
-      if(!fl){
-        fl = new FeatureLayer({ url, outFields:["*"], title:"CLC2018" });
-        map.add(fl);
-        await fl.load();
-      }
-      // suggerisci campo paese dai nomi noti
-      const candidates = ["CNTR_CODE","CNTR_ID","CNTR_CODE_2","Country","COUNTRY","ISO2","ISO3","ISO_CODE","NUTS_ID","NATION"];
-      let countryField = candidates.find(c => fl.fields.some(f => f.name.toUpperCase() === c)) ||
-                         fl.fields.find(f => /^(cntr|country|iso)/i.test(f.name))?.name || "";
-      if(!countryField){ alert("Non trovo un campo paese. Scegline uno manualmente dal menu (dopo carico i campi)."); }
-      countryFieldSel.innerHTML = "";
-      fl.fields.forEach(f => countryFieldSel.append(new Option(f.name, f.name)));
-      if(countryField) countryFieldSel.value = countryField;
-
-      // distinct codici paese
-      const field = countryFieldSel.value;
-      if(!field){ alert("Seleziona un campo paese."); return; }
-      log("Rilevo codici paese…");
-      const stats = await fl.queryFeatures({
-        where: "1=1",
-        outFields: [field],
-        groupByFieldsForStatistics: [field],
-        outStatistics: [{ onStatisticField: "1", outStatisticFieldName: "cnt", statisticType: "count" }],
-        returnGeometry: false
-      });
-      const values = (stats.features||[])
-        .map(f => String(f.attributes[field]))
-        .filter(v => v && v !== "null" && v !== "undefined")
-        .sort((a,b)=>a.localeCompare(b));
-      countryListSel.innerHTML = "";
-      values.forEach(v => {
-        const opt = new Option(v, v);
-        if(v === "PT") opt.selected = true; // default: Portogallo
-        countryListSel.append(opt);
-      });
-      log(`Trovati ${values.length} codici paese. (Selezionato: PT)`);
-    }catch(e){
-      console.error(e); alert("Errore rilevando i paesi: " + (e.message||e));
-    }
+  // Carica/confini GeoJSON e applica filtro spaziale
+  let clipGeom = null;
+  document.getElementById("btnLoadBnd").onclick = async () => {
+    await loadBoundaries();
   };
+  // carica subito PT all’avvio (auto)
+  loadBoundaries().catch(()=>{});
 
-  // Applica
+  async function loadBoundaries(){
+    try{
+      const url = document.getElementById("bndUrl").value.trim();
+      if(!url){ alert("Inserisci l'URL di un GeoJSON di confini."); return; }
+      logEl.textContent = ""; log("Scarico GeoJSON confini…");
+      const gj = await (await fetch(url)).json();
+
+      // Converte a un'unica geometria (union) in WKID:4326
+      const geoms = [];
+      const feats = gj.features || [];
+      feats.forEach(f => {
+        if(!f.geometry) return;
+        const g = gjGeomToEsri(f.geometry);
+        if(g) geoms.push(g);
+      });
+      if(!geoms.length){ alert("GeoJSON senza poligoni."); return; }
+      clipGeom = (geoms.length === 1) ? geoms[0] : geometryEngine.union(geoms);
+      bndLayer.removeAll();
+      bndLayer.add(new Graphic({
+        geometry: clipGeom,
+        symbol: { type: "simple-fill", color: [0,0,0,0], outline: { color: [0,0,0,80], width: 1 } }
+      }));
+      await view.goTo(clipGeom.extent.expand(1.05));
+      log("Confini caricati (PT).");
+    }catch(e){
+      console.error(e); alert("Errore caricando confini: " + (e.message||e));
+    }
+  }
+
+  // Applica palette + filtro paesi
   document.getElementById("btnApply").onclick = async () => {
     try{
-      logEl.textContent = "";
+      log("— Avvio rendering —");      
       const url = document.getElementById("layerUrl").value.trim();
       const classField = document.getElementById("classField").value.trim();
       const paletteObj = JSON.parse(document.getElementById("paletteJson").value || "{}");
       const paletteKey = document.getElementById("paletteSelect").value;
       if(!url || !classField || !paletteObj[paletteKey]){ alert("Compila URL, campo classe e palette."); return; }
 
-      // (Re)load layer
       if(!fl || fl.url !== url){ if(fl) map.remove(fl); fl = new FeatureLayer({ url, outFields:["*"], title:"CLC2018" }); map.add(fl); await fl.load(); }
+      // non disegnare da lontano: minScale 1:250k
+      fl.minScale = 250000; fl.maxScale = 0;
 
-      // filtro paesi scelti
-      const countryField = countryFieldSel.value;
-      const chosen = Array.from(countryListSel.selectedOptions).map(o=>o.value);
-      const whereCountries = (countryField && chosen.length) ? `${countryField} IN (${chosen.map(v=>"'"+v.replace(/'/g,"''")+"'").join(",")})` : "1=1";
-      fl.definitionExpression = whereCountries;
-      log("Filtro paesi: " + (whereCountries === "1=1" ? "(nessuno)" : whereCountries));
+      // Filtro spaziale (clip)
+      const lv = await view.whenLayerView(fl);
+      lv.filter = clipGeom ? { geometry: clipGeom, spatialRelationship: "intersects" } : null;
 
-      // forzo scale visibili e centro su PT se presente tra i selezionati (altrimenti extent filtro)
-      try{ fl.minScale = 0; fl.maxScale = 0; }catch(e){}
-      // centrami sul Portogallo come default
-      await view.goTo({ center: [-8.0, 39.6], scale: 240000 }); // scala < 1:250k
-      // poi, se riesco, vai all'estensione filtrata
+      // Statistiche area per classe limitate al clip
+      let classAreas = {};
       try{
-        const ext = await fl.queryExtent({ where: whereCountries });
-        if(ext && ext.extent){ await view.goTo(ext.extent.expand(1.05)); }
-      }catch(e){ /* se fallisce, resta sul centro PT */ }
-
-      // 1) statistiche server area per classe con filtro paesi
-      let classAreas = null, statsOk = false;
-      try{
-        log("Calcolo aree per classe (server)…");
         const statDef = [{ onStatisticField: "Shape_Area", outStatisticFieldName: "sum_area", statisticType: "sum" }];
         const res = await fl.queryFeatures({
-          where: whereCountries,
+          where: "1=1",
           outFields: [classField],
           groupByFieldsForStatistics: [classField],
           outStatistics: statDef,
+          geometry: clipGeom || undefined,
+          spatialRelationship: clipGeom ? "intersects" : undefined,
           returnGeometry: false
         });
-        classAreas = {};
-        (res.features||[]).forEach(f => {
+        (res.features||[]).forEach(f=>{
           const cls = String(f.attributes[classField]);
           const a = +f.attributes.sum_area || 0;
           classAreas[cls] = (classAreas[cls]||0) + a;
         });
-        statsOk = Object.keys(classAreas).length > 0;
-        log(statsOk ? `Statistiche server OK: ${Object.keys(classAreas).length} classi.` : "Statistiche vuote.");
-      } catch(e){
-        log("Statistiche server fallite: " + (e.message||e));
-      }
-
-      // 2) fallback client con filtro paesi
-      if(!statsOk){
-        log("Fallback client (più lento)…");
-        classAreas = await computeAreasClient(fl, classField, whereCountries);
-        log(`Aree client calcolate: ${Object.keys(classAreas).length} classi.`);
+        if(Object.keys(classAreas).length === 0) throw new Error("stats_vuote");
+        log(`Statistiche server OK: ${Object.keys(classAreas).length} classi.`);
+      }catch(e){
+        // fallback client
+        log("Statistiche server non disponibili → fallback client…");
+        classAreas = await computeAreasClient(fl, classField, clipGeom);
       }
 
       const totalArea = Object.values(classAreas).reduce((a,b)=>a+b,0);
-      log(`Area totale ≈ ${fmtArea(totalArea)}.`);
+      log(`Area totale clip ≈ ${fmtArea(totalArea)}.`);
 
-      // palette e renderer senza outline
       const palette = normalizePalette(paletteObj[paletteKey].colors);
       const classOrder = Object.entries(classAreas).sort((a,b)=>b[1]-a[1]).map(([k])=>k);
       const classToColor = assignColorsByArea(classOrder, classAreas, palette);
@@ -288,20 +254,21 @@ require([
         field: classField,
         uniqueValueInfos: Object.entries(classToColor).map(([value, hex]) => ({
           value, label: value,
-          symbol: { type: "simple-fill", color: hex, outline: { color: [0,0,0,0], width: 0 } }  // ← niente bordo
+          symbol: { type: "simple-fill", color: hex, outline: { color: [0,0,0,0], width: 0 } }
         }))
       };
 
+      // centra sul clip (PT)
+      if(clipGeom){ await view.goTo(clipGeom.extent.expand(1.05)); } else { await view.goTo({ center: [-8,39.6], scale: 240000 }); }
+
       renderLegend(Object.entries(classToColor).map(([value,hex])=>({value,label:value,symbol:{color:hex}})));
       legendWrap.hidden = false;
-
       togglePanel(false);
-      log("Palette applicata (senza outline) con proporzioni del quadro. ✅");
+      log("✅ Renderer applicato con filtro spaziale (clip).");
 
-    } catch(err){
+    }catch(err){
       console.error(err);
-      log("ERRORE: " + (err.message||err));
-      alert("Errore: "+err.message);
+      alert("Errore: "+(err.message||err));
     }
   };
 
@@ -312,13 +279,15 @@ require([
   };
 
   // Helpers
-  async function computeAreasClient(layer, classField, where){
+  async function computeAreasClient(layer, classField, geom){
     const out = {};
-    const pageSize = 5000;
+    const pageSize = 4000;
     let start = 0, tot = 0;
     while(true){
-      const res = await layer.queryFeatures({ where: where||"1=1", outFields:[classField], returnGeometry:true, start, num:pageSize })
-                             .catch(e => { log("queryFeatures fallita: "+(e.message||e)); return {features:[]}; });
+      const res = await layer.queryFeatures({
+        where:"1=1", outFields:[classField], returnGeometry:true, start, num:pageSize,
+        geometry: geom || undefined, spatialRelationship: geom ? "intersects" : undefined
+      }).catch(e => ({features:[]}));
       const arr = res.features || [];
       if(arr.length===0) break;
       arr.forEach(f=>{
@@ -339,12 +308,10 @@ require([
     const sum = colors.reduce((s,c)=>s+(+c.weight||0),0)||1;
     return colors.map(c=>({hex:c.hex,w:(c.weight||0)*100/sum}));
   }
-
   function assignColorsByArea(classOrder, classAreas, palette){
     const total = Object.values(classAreas).reduce((a,b)=>a+b,0);
     const buckets = palette.map(p=>({hex:p.hex,target:p.w/100*total,assigned:0}));
-    const mapColor = {};
-    let i=0;
+    const mapColor = {}; let i=0;
     for(const cls of classOrder){
       const a = classAreas[cls];
       while(i < buckets.length-1 && buckets[i].assigned + a > buckets[i].target*1.02) i++;
@@ -353,7 +320,6 @@ require([
     }
     return mapColor;
   }
-
   function renderLegend(infos){
     legendItems.innerHTML = "";
     infos.slice(0,25).forEach(inf=>{
@@ -366,12 +332,23 @@ require([
       d.append(s,t); legendItems.append(d);
     });
   }
-
   function fmtArea(m2){
     if(!isFinite(m2)) return "—";
     if(m2 >= 1e8) return (m2/1e6).toFixed(1) + " km²";
     if(m2 >= 1e6) return (m2/1e6).toFixed(2) + " km²";
     return Math.round(m2).toLocaleString("it-IT") + " m²";
+  }
+  function gjGeomToEsri(g){
+    if(!g) return null;
+    if(g.type === "Polygon"){
+      return { type:"polygon", rings:g.coordinates[0].map(([x,y])=>[x,y]), spatialReference:{wkid:4326} };
+    }
+    if(g.type === "MultiPolygon"){
+      const rings = [];
+      for(const poly of g.coordinates){ rings.push(...poly[0].map(([x,y])=>[x,y])); }
+      return { type:"polygon", rings, spatialReference:{wkid:4326} };
+    }
+    return null;
   }
 });
 </script>
