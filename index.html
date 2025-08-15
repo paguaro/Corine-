@@ -2,388 +2,129 @@
 <html lang="it">
 <head>
 <meta charset="utf-8" />
-<title>CLC2018 → Palette d’autore (Clip PT+ES)</title>
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>CLC – Mona Lisa palette</title>
+<link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
 <script src="https://js.arcgis.com/4.33/"></script>
 <style>
-  :root{ --panel-w:420px; --panel-pad:10px; --safe-top:env(safe-area-inset-top,0px); --safe-bottom:env(safe-area-inset-bottom,0px); }
-  html,body,#viewDiv{height:100%;margin:0}
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-  .fab{position:absolute;z-index:20;top:calc(8px + var(--safe-top));left:8px;width:40px;height:40px;border-radius:20px;
-       display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #0002;box-shadow:0 2px 8px rgba(0,0,0,.15);font-size:20px;cursor:pointer}
-  .panel{position:absolute;z-index:15;background:rgba(255,255,255,.98);border-radius:12px;box-shadow:0 6px 16px rgba(0,0,0,.18);
-         padding:var(--panel-pad);width:var(--panel-w);max-height:70vh;overflow:auto}
-  @media (min-width:801px){ .panel{ top:calc(10px + var(--safe-top)); left:10px } }
-  @media (max-width:800px){ .panel{ width:min(92vw,520px); left:50%; transform:translateX(-50%); bottom:calc(8px + var(--safe-bottom)); max-height:55vh } }
-  .row{display:flex;gap:6px;margin:6px 0;align-items:center;flex-wrap:wrap}
-  .row label{min-width:110px;font-size:13px}
-  input,select,button{font-size:14px}
-  textarea{width:100%;height:120px;font:12px ui-monospace,Menlo,Consolas,monospace}
-  .title{font-weight:600;margin-bottom:6px}
-  #legendWrap{position:absolute;z-index:12;right:8px;bottom:calc(8px + var(--safe-bottom));background:#fff;border-radius:10px;padding:8px;
-              box-shadow:0 2px 8px rgba(0,0,0,.15);max-width:300px;font-size:12px}
-  .legend-item{display:flex;gap:8px;align-items:center;margin:4px 0}
-  .sw{width:14px;height:14px;border:1px solid #0000;border-radius:2px}
-  .legend-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600}
-  .toggle{border:none;background:#f3f3f3;border-radius:6px;padding:4px 8px;cursor:pointer}
-  #log{font:12px ui-monospace,monospace;background:#fafafa;border:1px solid #eee;border-radius:6px;max-height:140px;overflow:auto;white-space:pre-wrap;padding:6px}
-  @media (max-width:390px){ .row label{min-width:96px} input,select,button{font-size:13px} }
+  html, body, #viewDiv { height: 100%; margin: 0; }
+  #panel {
+    position:absolute; top:10px; left:10px; z-index:10; background:#fff; padding:10px;
+    border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,.15);
+    font-family: system-ui, sans-serif; font-size:14px;
+  }
+  #legendDiv {
+    position:absolute; bottom:10px; left:10px; z-index:10; background:#fff; padding:8px 10px;
+    border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.15);
+  }
+  .badge {
+    display:inline-block; padding:2px 6px; border-radius:4px;
+    background:#eef; margin-left:6px; font-size:12px;
+  }
 </style>
 </head>
 <body>
-<div id="viewDiv" aria-label="Mappa Corine Land Cover 2018"></div>
-
-<button id="btnFab" class="fab" title="Comandi">☰</button>
-
-<div id="panel" class="panel" hidden>
-  <div class="title">CLC2018 → Palette d’autore</div>
-
-  <div class="row">
-    <label>Layer URL</label>
-    <input id="layerUrl" style="flex:1"
-      value="https://image.discomap.eea.europa.eu/arcgis/rest/services/Corine/CLC2018_WM/MapServer/0" />
-  </div>
-  <div class="row">
-    <label>Campo classe</label>
-    <input id="classField" style="flex:1" value="Code_18" />
-  </div>
-
-  <!-- Confini (GeoJSON) -->
-  <div class="row">
-    <label>URL confini (GeoJSON)</label>
-    <!-- Due URL separati da virgola: Portogallo + Spagna -->
-    <input id="bndUrl" style="flex:1"
-      value="https://raw.githubusercontent.com/johan/world.geo.json/master/countries/PRT.geo.json, https://raw.githubusercontent.com/johan/world.geo.json/master/countries/ESP.geo.json" />
-    <button id="btnLoadBnd">Carica confini</button>
-  </div>
-
-  <div class="row">
-    <label>JSON palette</label>
-    <button id="btnDemo" title="Carica due palette esempio (Van Gogh / Monet)">Demo</button>
-    <button id="btnFromUrl">Da URL</button>
-  </div>
-  <div class="row"><textarea id="paletteJson" placeholder='Incolla qui il JSON delle palette…'></textarea></div>
-  <div class="row">
-    <label>Palette</label>
-    <select id="paletteSelect" style="flex:1"><option value="">— seleziona —</option></select>
-  </div>
-
-  <div class="row" style="justify-content:flex-end;gap:8px">
-    <button id="btnApply">Calcola & Applica</button>
-    <button id="btnShot">Esporta PNG</button>
-    <button id="btnClose">Chiudi</button>
-  </div>
-
-  <div id="log" aria-live="polite"></div>
+<div id="viewDiv"></div>
+<div id="panel">
+  <div><strong>File:</strong> CLC2012_Export_FeaturesToJSO.geojson</div>
+  <div><strong>Campo gruppo:</strong> group_20 <span id="grpCount" class="badge"></span></div>
+  <div><strong>Palette:</strong> Mona Lisa (20 colori)</div>
+  <button id="btnApply" style="margin-top:6px;">Applica / Ricalcola aree</button>
 </div>
-
-<div id="legendWrap" hidden>
-  <div class="legend-head">
-    <span>Legenda (prime 25)</span>
-    <button id="btnLegToggle" class="toggle">Minimizza</button>
-  </div>
-  <div id="legend" style="margin-top:6px;">
-    <div id="legendItems"></div>
-  </div>
-</div>
+<div id="legendDiv"></div>
 
 <script>
-require([
-  "esri/config",
-  "esri/Map","esri/views/MapView","esri/layers/FeatureLayer",
-  "esri/layers/GraphicsLayer","esri/Graphic",
-  "esri/geometry/geometryEngine","esri/widgets/ScaleBar"
-], (esriConfig,Map,MapView,FeatureLayer,GraphicsLayer,Graphic,geometryEngine,ScaleBar) => {
+  // Percorso relativo al file GeoJSON
+  const GEOJSON_URL = "./CLC2012_Export_FeaturesToJSO.geojson";
+  const GROUP_FIELD = "group_20";
 
-  // CORS prudenziale per EEA
-  try{ esriConfig.request.corsEnabledServers.push("https://image.discomap.eea.europa.eu"); }catch(e){}
-
-  const logEl = document.getElementById("log");
-  const panel = document.getElementById("panel");
-  const fab = document.getElementById("btnFab");
-  const btnClose = document.getElementById("btnClose");
-  const legendWrap = document.getElementById("legendWrap");
-  const legendItems = document.getElementById("legendItems");
-  const legendBox = document.getElementById("legend");
-  const btnLegToggle = document.getElementById("btnLegToggle");
-  const btnApply = document.getElementById("btnApply");
-
-  const map = new Map({ basemap: "gray-vector" });
-  const view = new MapView({ container: "viewDiv", map, center: [-4,39], zoom: 5, padding: { top: 0, bottom: 0 }});
-  view.ui.add(new ScaleBar({ view, unit: "metric" }), "bottom-left");
-
-  // Layer CLC
-  let fl = null;
-  // Layer confini (per visualizzare il clip)
-  const bndLayer = new GraphicsLayer({ title: "Confini selezione" });
-  map.add(bndLayer);
-
-  // UI
-  const isMobile = window.matchMedia("(max-width:800px)").matches;
-  const togglePanel = (show) => {
-    const want = (typeof show === "boolean") ? show : panel.hidden;
-    panel.hidden = !want;
-    if(isMobile) view.padding = { bottom: panel.hidden ? 0 : Math.round(window.innerHeight * 0.36) };
-  };
-  fab.onclick = () => togglePanel(true);
-  btnClose.onclick = () => togglePanel(false);
-  btnLegToggle.onclick = () => {
-    const collapsed = legendBox.style.display === "none";
-    legendBox.style.display = collapsed ? "block" : "none";
-    btnLegToggle.textContent = collapsed ? "Minimizza" : "Massimizza";
-  };
-  function log(m){ logEl.textContent += m+"\\n"; logEl.scrollTop = logEl.scrollHeight; }
-
-  // Palette demo (nessuna selezione automatica)
-  document.getElementById("btnDemo").onclick = () => {
-    const demo = {
-      "van_gogh_starry_night":{ "title":"Van Gogh – Starry Night",
-        "colors":[{"hex":"#2C3E50","weight":35},{"hex":"#2980B9","weight":30},{"hex":"#F1C40F","weight":20},{"hex":"#27AE60","weight":10},{"hex":"#ECF0F1","weight":5}]},
-      "monet_water_lilies":{ "title":"Monet – Water Lilies",
-        "colors":[{"hex":"#567D46","weight":40},{"hex":"#7FB3D5","weight":25},{"hex":"#D4E6F1","weight":15},{"hex":"#A9DFBF","weight":12},{"hex":"#1B4F72","weight":8}]}
-    };
-    paletteJson.value = JSON.stringify(demo,null,2);
-    populatePaletteSelect(demo); // non seleziono nulla: resta a scelta tua
-    log("Palette demo caricate (seleziona quella che vuoi).");
-  };
-  document.getElementById("btnFromUrl").onclick = async () => {
-    const url = prompt("URL JSON palette:");
-    if(!url) return;
-    try{
-      const obj = await (await fetch(url)).json();
-      paletteJson.value = JSON.stringify(obj,null,2);
-      populatePaletteSelect(obj);
-      log("Palette caricate da URL (seleziona dall'elenco).");
-    }catch(e){ alert("Errore caricando il JSON: " + e.message); }
-  };
-  function populatePaletteSelect(obj){
-    const sel = document.getElementById("paletteSelect");
-    sel.innerHTML = "<option value=''>— seleziona —</option>";
-    for(const [k,v] of Object.entries(obj)) sel.append(new Option(v.title||k,k));
-  }
-
-  // Stato del clip
-  let clipGeom = null;
-
-  // Carica confini PT+ES subito e su click
-  document.getElementById("btnLoadBnd").onclick = () => loadBoundaries().catch(e=>alert(e.message||e));
-  loadBoundaries().catch(()=>{});
-
-  async function loadBoundaries(){
-    const urlsRaw = document.getElementById("bndUrl").value.trim();
-    if(!urlsRaw){ throw new Error("Inserisci uno o più URL (separati da virgola) di GeoJSON di confini."); }
-    const urls = urlsRaw.split(",").map(s=>s.trim()).filter(Boolean);
-    logEl.textContent = ""; log("Scarico GeoJSON confini…");
-
-    // scarica tutti i geojson e accumula le geometrie
-    const geoms = [];
-    for (const u of urls){
-      const gj = await (await fetch(u)).json();
-      const feats = gj.features || [];
-      feats.forEach(f => {
-        const g = gjGeomToEsri(f.geometry);
-        if(g) geoms.push(g);
-      });
-    }
-    if(!geoms.length) throw new Error("GeoJSON senza poligoni.");
-
-    // union + simplify → clipGeom robusta
-    let union = (geoms.length === 1) ? geoms[0] : geometryEngine.union(geoms);
-    clipGeom = geometryEngine.simplify(union) || union;
-
-    // disegna contorno e centra
-    bndLayer.removeAll();
-    bndLayer.add(new Graphic({
-      geometry: clipGeom,
-      symbol: { type: "simple-fill", color: [0,0,0,0], outline: { color: [0,0,0,80], width: 1 } }
-    }));
-    await safeGoToClip();
-    log("Confini caricati (PT+ES).");
-  }
-
-  // Applica palette + filtro spaziale (debounced)
-  btnApply.onclick = async () => {
-    if (btnApply.disabled) return;     // debounce
-    btnApply.disabled = true;
-    try{
-      log("— Avvio rendering —");
-      const url = document.getElementById("layerUrl").value.trim();
-      const classField = document.getElementById("classField").value.trim();
-      const paletteObj = JSON.parse(document.getElementById("paletteJson").value || "{}");
-      const paletteKey = document.getElementById("paletteSelect").value;
-      if(!url || !classField || !paletteObj[paletteKey]){ alert("Compila URL, campo classe e seleziona una palette."); return; }
-
-      if(!fl || fl.url !== url){ if(fl) map.remove(fl); fl = new FeatureLayer({ url, outFields:["*"], title:"CLC2018" }); map.add(fl); await fl.load(); }
-      // non disegnare da lontano
-      fl.minScale = 250000; fl.maxScale = 0;
-
-      // filtro spaziale (clip) – assicura confini caricati
-      if(!clipGeom) { try{ await loadBoundaries(); }catch(_){} }
-      const lv = await view.whenLayerView(fl);
-      lv.filter = clipGeom ? { geometry: clipGeom, spatialRelationship: "intersects" } : null;
-
-      // Statistiche area per classe limitate al clip
-      let classAreas = {};
-      try{
-        const statDef = [{ onStatisticField: "Shape_Area", outStatisticFieldName: "sum_area", statisticType: "sum" }];
-        const res = await fl.queryFeatures({
-          where: "1=1",
-          outFields: [classField],
-          groupByFieldsForStatistics: [classField],
-          outStatistics: statDef,
-          geometry: clipGeom || undefined,
-          spatialRelationship: clipGeom ? "intersects" : undefined,
-          returnGeometry: false
-        });
-        (res.features||[]).forEach(f=>{
-          const cls = String(f.attributes[classField]);
-          const a = +f.attributes.sum_area || 0;
-          classAreas[cls] = (classAreas[cls]||0) + a;
-        });
-        if(Object.keys(classAreas).length === 0) throw new Error("stats_vuote");
-        log(`Statistiche server OK: ${Object.keys(classAreas).length} classi.`);
-      }catch(e){
-        // fallback client
-        log("Statistiche server non disponibili → fallback client…");
-        classAreas = await computeAreasClient(fl, classField, clipGeom);
-      }
-
-      const totalArea = Object.values(classAreas).reduce((a,b)=>a+b,0);
-      log(`Area totale clip ≈ ${fmtArea(totalArea)}.`);
-
-      // Palette e renderer SENZA outline
-      const palette = normalizePalette(paletteObj[paletteKey].colors);
-      const classOrder = Object.entries(classAreas).sort((a,b)=>b[1]-a[1]).map(([k])=>k);
-      const classToColor = assignColorsByArea(classOrder, classAreas, palette);
-
-      fl.renderer = {
-        type: "unique-value",
-        field: classField,
-        uniqueValueInfos: Object.entries(classToColor).map(([value, hex]) => ({
-          value, label: value,
-          symbol: { type: "simple-fill", color: hex, outline: { color: [0,0,0,0], width: 0 } }
-        }))
-      };
-
-      await safeGoToClip();
-      renderLegend(Object.entries(classToColor).map(([value,hex])=>({value,label:value,symbol:{color:hex}})));
-      legendWrap.hidden = false;
-      togglePanel(false);
-      log("✅ Renderer applicato con filtro spaziale (clip).");
-
-    }catch(err){
-      console.error(err);
-      alert("Errore: "+(err.message||err));
-    } finally {
-      btnApply.disabled = false;
-    }
+  // Palette Mona Lisa
+  const PALETTE = {
+    "1": "#a35a16","2": "#7d3f10","3": "#f1b837","4": "#312914","5": "#805835",
+    "6": "#d3b04c","7": "#2e110d","8": "#cd6b14","9": "#6a6548","10": "#7f6d2d",
+    "11": "#644600","12": "#52461e","13": "#e39226","14": "#973613","15": "#6c2415",
+    "16": "#ffdf5a","17": "#0f0506","18": "#a58936","19": "#606d35","20": "#4d2212"
   };
 
-  // Screenshot
-  document.getElementById("btnShot").onclick = async () => {
-    const shot = await view.takeScreenshot({ format:"png", quality:100 });
-    const a = document.createElement("a"); a.href = shot.dataUrl; a.download = "clc2018_palette.png"; a.click();
-  };
+  let view, layer, geometryEngine;
 
-  // Helpers ----------------------------------------------------
-  async function computeAreasClient(layer, classField, geom){
-    const out = {};
-    const pageSize = 4000;
-    let start = 0, tot = 0;
-    while(true){
-      const res = await layer.queryFeatures({
-        where:"1=1", outFields:[classField], returnGeometry:true, start, num:pageSize,
-        geometry: geom || undefined, spatialRelationship: geom ? "intersects" : undefined
-      }).catch(e => ({features:[]}));
-      const arr = res.features || [];
-      if(arr.length===0) break;
-      arr.forEach(f=>{
-        const cls = String(f.attributes[classField]);
-        let a = 0;
-        try{ a = Math.abs(geometryEngine.geodesicArea(f.geometry,"square-meters")); }catch(e){ a = 0; }
-        out[cls] = (out[cls]||0) + (isFinite(a)?a:0);
-      });
-      tot += arr.length;
-      log(`  • Batch ${start+1}–${start+arr.length} (tot: ${tot})`);
-      start += arr.length;
-      await new Promise(r=>setTimeout(r,0));
-    }
-    return out;
-  }
+  require([
+    "esri/Map",
+    "esri/views/MapView",
+    "esri/layers/GeoJSONLayer",
+    "esri/widgets/Legend",
+    "esri/geometry/geometryEngine"
+  ], (Map, MapView, GeoJSONLayer, Legend, gEngine) => {
+    geometryEngine = gEngine;
 
-  function normalizePalette(colors){
-    const sum = colors.reduce((s,c)=>s+(+c.weight||0),0)||1;
-    return colors.map(c=>({hex:c.hex,w:(c.weight||0)*100/sum}));
-  }
+    const map = new Map({ basemap: "gray-vector" });
+    view = new MapView({ container: "viewDiv", map });
 
-  function assignColorsByArea(classOrder, classAreas, palette){
-    const total = Object.values(classAreas).reduce((a,b)=>a+b,0);
-    const buckets = palette.map(p=>({hex:p.hex,target:p.w/100*total,assigned:0}));
-    const mapColor = {}; let i=0;
-    for(const cls of classOrder){
-      const a = classAreas[cls];
-      while(i < buckets.length-1 && buckets[i].assigned + a > buckets[i].target*1.02) i++;
-      mapColor[cls] = buckets[i].hex;
-      buckets[i].assigned += a;
-    }
-    return mapColor;
-  }
-
-  function renderLegend(infos){
-    legendItems.innerHTML = "";
-    infos.slice(0,25).forEach(inf=>{
-      const d=document.createElement("div"); d.className="legend-item";
-      const s=document.createElement("span"); s.className="sw";
-      s.style.background = Array.isArray(inf.symbol.color)
-        ? `rgba(${inf.symbol.color[0]},${inf.symbol.color[1]},${inf.symbol.color[2]},${(inf.symbol.color[3]??255)/255})`
-        : inf.symbol.color;
-      const t=document.createElement("span"); t.textContent = inf.label || inf.value;
-      d.append(s,t); legendItems.append(d);
+    layer = new GeoJSONLayer({
+      url: GEOJSON_URL,
+      outFields: ["*"],
+      title: "CLC (20 gruppi)"
     });
-  }
+    map.add(layer);
 
-  function fmtArea(m2){
-    if(!isFinite(m2)) return "—";
-    if(m2 >= 1e8) return (m2/1e6).toFixed(1) + " km²";
-    if(m2 >= 1e6) return (m2/1e6).toFixed(2) + " km²";
-    return Math.round(m2).toLocaleString("it-IT") + " m²";
-  }
+    new Legend({ view, container: "legendDiv" });
 
-  // centratura sicura sul clip (niente .extent diretto)
-  async function safeGoToClip(){
+    view.whenLayerView(layer).then(() => {
+      fitToLayer();
+      applyRenderer();
+    });
+
+    document.getElementById("btnApply").addEventListener("click", applyRenderer);
+  });
+
+  async function fitToLayer() {
     try {
-      if (clipGeom) {
-        await view.goTo({ target: clipGeom, padding: 20 });
-        if (view.scale > 240000) await view.goTo({ scale: 240000 });
-      } else {
-        await view.goTo({ center: [-8, 39.6], scale: 240000 });
-      }
-    } catch(e) {
-      await view.goTo({ center: [-8, 39.6], scale: 240000 }).catch(()=>{});
-    }
+      const q = layer.createQuery();
+      q.returnGeometry = true;
+      const res = await layer.queryExtent(q);
+      if (res && res.extent) view.goTo(res.extent.expand(1.05));
+    } catch(e) { console.warn(e); }
   }
 
-  // GeoJSON → Esri (Polygon/MultiPolygon con holes)
-  function gjGeomToEsri(g){
-    if(!g) return null;
-    const sr = { wkid: 4326 }; // GeoJSON WGS84
-    if(g.type === "Polygon"){
-      const rings = g.coordinates.map(ring => ring.map(([x,y]) => [x,y]));
-      return { type: "polygon", rings, spatialReference: sr };
+  async function applyRenderer() {
+    const q = layer.createQuery();
+    q.returnGeometry = true;
+    q.outFields = [GROUP_FIELD];
+    q.outSpatialReference = { wkid: 4326 };
+    const res = await layer.queryFeatures(q);
+
+    const areas = new Map();
+    for (const f of res.features) {
+      const gid = f.attributes[GROUP_FIELD];
+      const a = Math.abs(geometryEngine.geodesicArea(f.geometry, "square-meters")) || 0;
+      areas.set(gid, (areas.get(gid) || 0) + a);
     }
-    if(g.type === "MultiPolygon"){
-      const rings = [];
-      for (const poly of g.coordinates){
-        for (const ring of poly){
-          rings.push(ring.map(([x,y]) => [x,y]));
-        }
-      }
-      return { type: "polygon", rings, spatialReference: sr };
-    }
-    return null;
+
+    const entries = Array.from(areas.entries()).sort((a,b) => b[1]-a[1]);
+    const n = entries.length;
+    const rankByGroup = new Map();
+    entries.forEach(([gid], i) => rankByGroup.set(gid, n - i));
+
+    const infos = entries.map(([gid]) => {
+      const rank = rankByGroup.get(gid);
+      const hex = PALETTE[String(rank)] || "#cccccc";
+      return {
+        value: gid,
+        label: `Gruppo ${gid} (rank ${rank})`,
+        symbol: { type: "simple-fill", color: hex, outline: { color: [0,0,0,40], width: 0.25 } }
+      };
+    });
+
+    layer.renderer = {
+      type: "unique-value",
+      field: GROUP_FIELD,
+      uniqueValueInfos: infos,
+      legendOptions: { title: "CLC – Mona Lisa (rank per area)" }
+    };
+
+    const el = document.getElementById("grpCount");
+    if (el) el.textContent = `${n} gruppi visibili`;
   }
-});
 </script>
 </body>
 </html>
