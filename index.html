@@ -6,8 +6,6 @@
 <title>Corine – multi dataset & palette</title>
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
 <script src="https://js.arcgis.com/4.33/"></script>
-<!-- Web component Basemap Gallery -->
-<script type="module" src="https://js.arcgis.com/map-components/4.33/arcgis-basemap-gallery.js"></script>
 <style>
   html,body,#viewDiv{height:100%;margin:0}
   #panel{
@@ -26,7 +24,7 @@
   input[type="range"]{width:100%}
   #log{font-size:12px;max-height:160px;overflow:auto;margin-top:6px}
 
-  /* Basemap: pulsante toggle e pannello compatto, raccoglibile */
+  /* Basemap picker compatto, in basso a destra, richiudibile */
   #bm-toggle{
     position:absolute;right:15px;bottom:15px;z-index:25;
     width:40px;height:40px;border-radius:999px;border:none;
@@ -36,18 +34,29 @@
   #bm-panel{
     position:absolute;right:15px;bottom:65px;z-index:24;display:none;
     background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.25);
-    max-height:240px;overflow:auto;padding:4px;min-width:240px;
+    padding:8px;min-width:220px;
   }
-  arcgis-basemap-gallery{display:block}
+  #bm-panel label{display:block;font-size:12px;color:#555;margin-bottom:4px}
 </style>
 </head>
 <body>
 <div id="viewDiv"></div>
 
-<!-- Pulsante toggle e pannello “raccoglibile” per la Basemap Gallery -->
+<!-- Basemap picker custom -->
 <button id="bm-toggle" title="Basemap">🗺️</button>
 <div id="bm-panel">
-  <arcgis-basemap-gallery position="bottom-right"></arcgis-basemap-gallery>
+  <label>Seleziona mappa di base</label>
+  <select id="bm-select">
+    <option value="gray-vector">Grigio (vector)</option>
+    <option value="topo-vector">Topografica (vector)</option>
+    <option value="streets-vector">Strade (vector)</option>
+    <option value="satellite">Satellite</option>
+    <option value="hybrid">Ibrida</option>
+    <option value="oceans">Oceani</option>
+    <option value="dark-gray-vector">Grigio scuro (vector)</option>
+    <option value="terrain">Terreno</option>
+    <option value="osm-standard">OSM Standard</option>
+  </select>
 </div>
 
 <div id="panel">
@@ -90,12 +99,14 @@ require([
   const view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:6 });
   view.ui.move("zoom","top-right");
 
-  // Basemap toggle (raccoglibile)
+  // Basemap picker (toggle + select)
   const btnBM = document.getElementById("bm-toggle");
   const pnlBM = document.getElementById("bm-panel");
+  const selBM = document.getElementById("bm-select");
   btnBM.addEventListener("click", ()=>{
     pnlBM.style.display = (pnlBM.style.display==="none" || !pnlBM.style.display) ? "block" : "none";
   });
+  selBM.addEventListener("change", ()=>{ map.basemap = selBM.value; });
 
   // --- LOG ---
   const log = (msg,cls="")=>{
@@ -213,7 +224,7 @@ require([
     const cols=ranks.map(r=>pal.colors[r]);
     for(let i=cols.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [cols[i],cols[j]]=[cols[j],cols[i]]; }
     entry.override={}; ranks.forEach((r,i)=> entry.override[r]=cols[i]);
-    applyPalette(entry); // <<< re-render immediato
+    applyPalette(entry); // re-render immediato
   }
 
   async function addFromURL(url){
