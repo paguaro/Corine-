@@ -1,130 +1,196 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="it">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>CLC – Mona Lisa palette</title>
-<link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
-<script src="https://js.arcgis.com/4.33/"></script>
-<style>
-  html, body, #viewDiv { height: 100%; margin: 0; }
-  #panel {
-    position:absolute; top:10px; left:10px; z-index:10; background:#fff; padding:10px;
-    border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,.15);
-    font-family: system-ui, sans-serif; font-size:14px;
-  }
-  #legendDiv {
-    position:absolute; bottom:10px; left:10px; z-index:10; background:#fff; padding:8px 10px;
-    border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.15);
-  }
-  .badge {
-    display:inline-block; padding:2px 6px; border-radius:4px;
-    background:#eef; margin-left:6px; font-size:12px;
-  }
-</style>
+  <meta charset="utf-8" />
+  <title>Corine Viewer - Multi Palette</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.33/"></script>
+  <style>
+    html, body, #viewDiv {
+      padding: 0; margin: 0; height: 100%; width: 100%;
+    }
+    #controls {
+      position: absolute;
+      top: 10px; left: 10px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px; border-radius: 8px;
+      max-height: 90%; overflow: auto;
+      font-family: sans-serif;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    .layerCard {
+      border: 1px solid #ccc;
+      margin-bottom: 10px;
+      padding: 6px;
+      border-radius: 6px;
+      background: #fafafa;
+    }
+    .layerCard h4 {
+      margin: 2px 0 6px 0;
+      font-size: 14px;
+    }
+    .layerCard select, .layerCard button {
+      width: 100%;
+      margin-bottom: 4px;
+    }
+  </style>
 </head>
 <body>
 <div id="viewDiv"></div>
-<div id="panel">
-  <div><strong>File:</strong> CLC2012_Export_FeaturesToJSO.geojson</div>
-  <div><strong>Campo gruppo:</strong> group_20 <span id="grpCount" class="badge"></span></div>
-  <div><strong>Palette:</strong> Mona Lisa (20 colori)</div>
-  <button id="btnApply" style="margin-top:6px;">Applica / Ricalcola aree</button>
+
+<div id="controls">
+  <h3>Gestione Layer</h3>
+  <input type="file" id="fileInput" multiple accept=".geojson,.json" />
+  <div id="layerList"></div>
 </div>
-<div id="legendDiv"></div>
 
 <script>
-  // Percorso relativo al file GeoJSON
-  const GEOJSON_URL = "./CLC2012_Export_FeaturesToJSO.geojson";
-  const GROUP_FIELD = "group_20";
+require([
+  "esri/Map",
+  "esri/views/MapView",
+  "esri/layers/GeoJSONLayer"
+], (Map, MapView, GeoJSONLayer) => {
 
-  // Palette Mona Lisa
-  const PALETTE = {
-    "1": "#a35a16","2": "#7d3f10","3": "#f1b837","4": "#312914","5": "#805835",
-    "6": "#d3b04c","7": "#2e110d","8": "#cd6b14","9": "#6a6548","10": "#7f6d2d",
-    "11": "#644600","12": "#52461e","13": "#e39226","14": "#973613","15": "#6c2415",
-    "16": "#ffdf5a","17": "#0f0506","18": "#a58936","19": "#606d35","20": "#4d2212"
-  };
-
-  let view, layer, geometryEngine;
-
-  require([
-    "esri/Map",
-    "esri/views/MapView",
-    "esri/layers/GeoJSONLayer",
-    "esri/widgets/Legend",
-    "esri/geometry/geometryEngine"
-  ], (Map, MapView, GeoJSONLayer, Legend, gEngine) => {
-    geometryEngine = gEngine;
-
-    const map = new Map({ basemap: "gray-vector" });
-    view = new MapView({ container: "viewDiv", map });
-
-    layer = new GeoJSONLayer({
-      url: GEOJSON_URL,
-      outFields: ["*"],
-      title: "CLC (20 gruppi)"
-    });
-    map.add(layer);
-
-    new Legend({ view, container: "legendDiv" });
-
-    view.whenLayerView(layer).then(() => {
-      fitToLayer();
-      applyRenderer();
-    });
-
-    document.getElementById("btnApply").addEventListener("click", applyRenderer);
+  // -----------------------
+  // Mappa base
+  // -----------------------
+  const map = new Map({ basemap: "topo-vector" });
+  const view = new MapView({
+    container: "viewDiv",
+    map,
+    center: [-8, 39.5],
+    zoom: 6
   });
 
-  async function fitToLayer() {
-    try {
-      const q = layer.createQuery();
-      q.returnGeometry = true;
-      const res = await layer.queryExtent(q);
-      if (res && res.extent) view.goTo(res.extent.expand(1.05));
-    } catch(e) { console.warn(e); }
+  // -----------------------
+  // Palette
+  // -----------------------
+  let PALETTES = {};
+  const FALLBACK_COLORS = {
+    "1":"#a35a16","2":"#7d3f10","3":"#f1b837","4":"#312914","5":"#805835",
+    "6":"#d3b04c","7":"#2e110d","8":"#cd6b14","9":"#6a6548","10":"#7f6d2d",
+    "11":"#644600","12":"#52461e","13":"#e39226","14":"#973613","15":"#6c2415",
+    "16":"#ffdf5a","17":"#0f0506","18":"#a58936","19":"#606d35","20":"#4d2212"
+  };
+
+  async function loadPalettes() {
+    const r = await fetch("./palettes_from_twb.json");
+    const data = await r.json();
+    (data.palettes || []).forEach(p => {
+      // normalizza
+      const colors = {};
+      const keys = Object.keys(p.colors || {});
+      if (keys.length < 20) {
+        // fallback
+        for (let i=1;i<=20;i++) {
+          colors[i] = p.colors?.[i] || FALLBACK_COLORS[i];
+        }
+      } else {
+        for (let i=1;i<=20;i++) colors[i] = p.colors[i];
+      }
+      PALETTES[p.name] = { name: p.name, colors };
+    });
+    refreshLayerCards();
   }
 
-  async function applyRenderer() {
-    const q = layer.createQuery();
-    q.returnGeometry = true;
-    q.outFields = [GROUP_FIELD];
-    q.outSpatialReference = { wkid: 4326 };
-    const res = await layer.queryFeatures(q);
+  // -----------------------
+  // Gestione Layers
+  // -----------------------
+  const layersState = []; // { layer, title, paletteName }
 
-    const areas = new Map();
-    for (const f of res.features) {
-      const gid = f.attributes[GROUP_FIELD];
-      const a = Math.abs(geometryEngine.geodesicArea(f.geometry, "square-meters")) || 0;
-      areas.set(gid, (areas.get(gid) || 0) + a);
+  function addGeoJSONLayer(url, title="Layer") {
+    const lyr = new GeoJSONLayer({
+      url,
+      title
+    });
+    map.add(lyr);
+    const entry = { layer: lyr, title, paletteName: Object.keys(PALETTES)[0] || null };
+    layersState.push(entry);
+    lyr.when(() => {
+      applyRendererFor(entry);
+      refreshLayerCards();
+      view.goTo(lyr.fullExtent).catch(()=>{});
+    });
+  }
+
+  function applyRendererFor(entry, opts={}) {
+    const pal = PALETTES[entry.paletteName];
+    if (!pal) return;
+    const colors = Object.values(pal.colors);
+    const uniqueValueInfos = colors.map((c, idx) => ({
+      value: String(idx+1),
+      symbol: {
+        type: "simple-fill",
+        color: c,
+        outline: { color: [0,0,0,0.2], width: 0.5 }
+      }
+    }));
+    entry.layer.renderer = {
+      type: "unique-value",
+      field: "group",   // il campo nel GeoJSON che identifica la classe
+      uniqueValueInfos
+    };
+  }
+
+  function scrambleColors(entry) {
+    const pal = PALETTES[entry.paletteName];
+    if (!pal) return;
+    const keys = Object.keys(pal.colors);
+    for (let i=keys.length-1;i>0;i--) {
+      const j=Math.floor(Math.random()*(i+1));
+      [pal.colors[keys[i]], pal.colors[keys[j]]] = [pal.colors[keys[j]], pal.colors[keys[i]]];
     }
+    applyRendererFor(entry, {forceRecalc:false});
+  }
 
-    const entries = Array.from(areas.entries()).sort((a,b) => b[1]-a[1]);
-    const n = entries.length;
-    const rankByGroup = new Map();
-    entries.forEach(([gid], i) => rankByGroup.set(gid, n - i));
-
-    const infos = entries.map(([gid]) => {
-      const rank = rankByGroup.get(gid);
-      const hex = PALETTE[String(rank)] || "#cccccc";
-      return {
-        value: gid,
-        label: `Gruppo ${gid} (rank ${rank})`,
-        symbol: { type: "simple-fill", color: hex, outline: { color: [0,0,0,40], width: 0.25 } }
+  function refreshLayerCards() {
+    const list = document.getElementById("layerList");
+    list.innerHTML = "";
+    layersState.forEach((entry, idx) => {
+      const card = document.createElement("div");
+      card.className = "layerCard";
+      card.innerHTML = `
+        <h4>${entry.title}</h4>
+        <select id="palette-${idx}"></select>
+        <button id="scramble-${idx}">Scramble</button>
+        <button id="remove-${idx}">Rimuovi</button>
+      `;
+      list.appendChild(card);
+      const sel = card.querySelector(`#palette-${idx}`);
+      Object.keys(PALETTES).forEach(name=>{
+        const opt=document.createElement("option");
+        opt.value=name; opt.textContent=name;
+        if (name===entry.paletteName) opt.selected=true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change", ()=>{
+        entry.paletteName=sel.value;
+        applyRendererFor(entry);
+      });
+      card.querySelector(`#scramble-${idx}`).onclick=()=>scrambleColors(entry);
+      card.querySelector(`#remove-${idx}`).onclick=()=>{
+        map.remove(entry.layer);
+        layersState.splice(idx,1);
+        refreshLayerCards();
       };
     });
-
-    layer.renderer = {
-      type: "unique-value",
-      field: GROUP_FIELD,
-      uniqueValueInfos: infos,
-      legendOptions: { title: "CLC – Mona Lisa (rank per area)" }
-    };
-
-    const el = document.getElementById("grpCount");
-    if (el) el.textContent = `${n} gruppi visibili`;
   }
+
+  // -----------------------
+  // File input handler
+  // -----------------------
+  document.getElementById("fileInput").addEventListener("change", evt=>{
+    const files = evt.target.files;
+    for (const f of files) {
+      const url = URL.createObjectURL(f);
+      addGeoJSONLayer(url, f.name);
+    }
+  });
+
+  // Init
+  loadPalettes();
+});
 </script>
 </body>
 </html>
