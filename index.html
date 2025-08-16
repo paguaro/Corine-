@@ -6,6 +6,8 @@
 <title>Corine – multi dataset & palette</title>
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
 <script src="https://js.arcgis.com/4.33/"></script>
+<!-- Nuovo componente per basemap gallery -->
+<script type="module" src="https://js.arcgis.com/map-components/4.33/arcgis-basemap-gallery.js"></script>
 <style>
   html,body,#viewDiv{height:100%;margin:0}
   #panel{
@@ -14,32 +16,27 @@
     max-width:420px;max-height:92%;overflow:auto
   }
   .row{display:flex;gap:8px;align-items:center;margin:.35rem 0}
-  .grow{flex:1}
   .card{border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;padding:8px;margin-top:8px}
   .card h4{margin:.2rem 0 .5rem 0;font-size:14px}
   .muted{color:#666}
   .ok{color:#166534}
   .err{color:#b91c1c}
-  button,select,input{font:inherit}
-  input[type="range"]{width:100%}
   #log{font-size:12px;max-height:140px;overflow:auto;margin-top:6px}
-  #basemapGalleryDiv {
+  arcgis-basemap-gallery {
     position: absolute;
     bottom: 15px;
     right: 15px;
-    z-index: 20;
     background: white;
     border-radius: 8px;
-    padding: 4px;
     box-shadow: 0 2px 8px rgba(0,0,0,.25);
-    max-height: 200px;
-    overflow:auto;
   }
 </style>
 </head>
 <body>
 <div id="viewDiv"></div>
-<div id="basemapGalleryDiv"></div>
+
+<!-- nuovo widget basemap -->
+<arcgis-basemap-gallery position="bottom-right"></arcgis-basemap-gallery>
 
 <div id="panel">
   <div class="row"><strong>Dati GeoJSON</strong></div>
@@ -49,7 +46,7 @@
     <button id="btnAddUrl">Aggiungi URL</button>
   </div>
   <div class="row">
-    <input id="fileInput" class="grow" type="file" accept=".geojson" multiple>
+    <input id="fileInput" type="file" accept=".geojson" multiple>
     <span class="muted">oppure file locale</span>
   </div>
 
@@ -57,7 +54,7 @@
   <div class="row"><strong>Palette</strong></div>
   <div class="row">
     <button id="btnAutoPal">Auto-carica</button>
-    <input id="palFile" class="grow" type="file" accept=".json">
+    <input id="palFile" type="file" accept=".json">
     <button id="btnLoadPal">Carica da file</button>
   </div>
   <div id="palInfo" class="muted"></div>
@@ -73,23 +70,13 @@
 
 <script>
 require([
-  "esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer","esri/renderers/SimpleRenderer",
-  "esri/symbols/SimpleFillSymbol","esri/widgets/BasemapGallery"
-],(Map,MapView,GeoJSONLayer,SimpleRenderer,SimpleFillSymbol,BasemapGallery)=>{
+  "esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer","esri/renderers/UniqueValueRenderer","esri/symbols/SimpleFillSymbol"
+],(Map,MapView,GeoJSONLayer,UniqueValueRenderer,SimpleFillSymbol)=>{
 
   const map = new Map({ basemap:"gray-vector" });
   const view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:6 });
-
-  // sposta controlli zoom in alto a destra
   view.ui.move("zoom","top-right");
 
-  // widget basemap gallery in basso a destra
-  const gallery = new BasemapGallery({
-    view,
-    container: "basemapGalleryDiv"
-  });
-
-  // stato globale
   let PALETTES = {};
   const FALLBACK = {
     "1":"#a35a16","2":"#7d3f10","3":"#f1b837","4":"#312914","5":"#805835",
@@ -101,11 +88,8 @@ require([
 
   function log(msg,cls=""){ 
     const div=document.getElementById("log");
-    const p=document.createElement("div");
-    if(cls) p.className=cls;
-    p.textContent=msg;
-    div.appendChild(p);
-    div.scrollTop=div.scrollHeight;
+    const p=document.createElement("div"); if(cls) p.className=cls;
+    p.textContent=msg; div.appendChild(p); div.scrollTop=div.scrollHeight;
   }
 
   function normalizePalettes(obj) {
@@ -130,33 +114,24 @@ require([
 
   async function autoLoadPalettes() {
     const palInfo = document.getElementById("palInfo");
-    const candidates = [
-      "./palettes_from_twb.json",
-      "./palettes.json",
-      "./data/palettes_from_twb.json"
-    ];
-    for (const url of candidates) {
-      try {
-        const r = await fetch(url,{cache:"no-store"});
-        if(!r.ok) continue;
-        const data = await r.json();
-        PALETTES = normalizePalettes(data);
-        palInfo.textContent = `Palette caricate da ${url}: ${Object.keys(PALETTES).length}`;
-        log(`Palette caricate da ${url}`,"ok");
-        refreshLayerCards();
-        return;
-      } catch(e){}
+    try {
+      const r = await fetch("./palettes_from_twb.json",{cache:"no-store"});
+      if(!r.ok) throw "not found";
+      const data = await r.json();
+      PALETTES = normalizePalettes(data);
+      palInfo.textContent = `Palette caricate: ${Object.keys(PALETTES).length}`;
+      log("Palette caricate","ok");
+      refreshLayerCards();
+    } catch(e){
+      palInfo.textContent="Nessuna palette trovata";
+      log("Palette non trovate","err");
     }
-    palInfo.textContent="Nessuna palette trovata. Caricane una da file.";
-    log("Palette non trovate","err");
   }
 
   function addLayer(url,name){
-    const renderer = new SimpleRenderer({
-      symbol: new SimpleFillSymbol({
-        color:[200,200,200,0.6],
-        outline:{color:[80,80,80],width:0.5}
-      })
+    const renderer = new UniqueValueRenderer({
+      field:"group",
+      defaultSymbol:new SimpleFillSymbol({color:[200,200,200,0.5],outline:{color:"gray",width:0.3}})
     });
     const layer = new GeoJSONLayer({
       url,
@@ -167,7 +142,6 @@ require([
     LAYERS.push(layer);
     log(`Layer aggiunto: ${layer.title}`,"ok");
     refreshLayerCards();
-    return layer;
   }
 
   function refreshLayerCards(){
@@ -194,17 +168,15 @@ require([
   function applyPalette(layer,palette){
     if(!palette){log("Nessuna palette selezionata","err");return;}
     const colors=palette.colors;
-    layer.renderer=new SimpleRenderer({
-      symbol:new SimpleFillSymbol({
-        color:[200,200,200,0.5],
-        outline:{color:[50,50,50],width:0.3}
-      }),
-      visualVariables:[{
-        type:"color",
-        field:"group",
-        stops:Object.entries(colors).map(([k,v])=>({value:Number(k),color:v}))
-      }]
+    const renderer = new UniqueValueRenderer({
+      field:"group",
+      defaultSymbol:new SimpleFillSymbol({color:[220,220,220,0.4],outline:{color:"gray",width:0.3}}),
+      uniqueValueInfos:Object.entries(colors).map(([k,v])=>({
+        value:k,
+        symbol:new SimpleFillSymbol({color:v,outline:{color:"black",width:0.2}})
+      }))
     });
+    layer.renderer=renderer;
     log(`Palette applicata a ${layer.title}: ${palette.name}`,"ok");
   }
 
@@ -235,7 +207,6 @@ require([
     }catch(e){log("Errore JSON palette","err");}
   });
 
-  // carica subito la palette se c'è
   autoLoadPalettes();
 });
 </script>
