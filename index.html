@@ -11,7 +11,7 @@
 <style>
   html,body,#viewDiv{height:100%;margin:0}
   #panel{
-    position:absolute;top:10px;left:10px;z-index:10;background:#fff;padding:12px;border-radius:8px;
+    position:absolute;top:10px;left:10px;z-index:10;background:#fff;padding:12px;border-radius:10px;
     box-shadow:0 2px 10px rgba(0,0,0,.15);font-family:system-ui,sans-serif;font-size:14px;
     max-width:420px;max-height:92%;overflow:auto
   }
@@ -19,12 +19,9 @@
   .grow{flex:1}
   .card{border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;padding:8px;margin-top:8px}
   .card h4{margin:.2rem 0 .5rem 0;font-size:14px}
-  .muted{color:#666}
-  .ok{color:#166534}
-  .err{color:#b91c1c}
+  .muted{color:#666}.ok{color:#166534}.err{color:#b91c1c}
   button,select,input{font:inherit}
-  input[type="range"]{width:100%}
-  #log{font-size:12px;max-height:140px;overflow:auto;margin-top:6px}
+  #log{font-size:12px;max-height:160px;overflow:auto;margin-top:6px}
   arcgis-basemap-gallery {
     position: absolute; bottom: 15px; right: 15px;
     background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.25);
@@ -71,19 +68,19 @@ require([
   "esri/renderers/UniqueValueRenderer","esri/symbols/SimpleFillSymbol"
 ],(Map,MapView,GeoJSONLayer,UniqueValueRenderer,SimpleFillSymbol)=>{
 
-  // --- MAPPA ---
+  // MAPPA
   const map = new Map({ basemap:"gray-vector" });
   const view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:6 });
   view.ui.move("zoom","top-right");
 
-  // --- LOG ---
+  // LOG
   const log = (msg,cls="")=>{
     const div=document.getElementById("log");
     const el=document.createElement("div"); if(cls) el.className=cls;
     el.textContent=msg; div.appendChild(el); div.scrollTop=div.scrollHeight;
   };
 
-  // --- PALETTE ---
+  // PALETTE
   let PALETTES = {};
   const FALLBACK = {
     "1":"#a35a16","2":"#7d3f10","3":"#f1b837","4":"#312914","5":"#805835",
@@ -92,17 +89,17 @@ require([
     "16":"#ffdf5a","17":"#0f0506","18":"#a58936","19":"#606d35","20":"#4d2212"
   };
   function normalizePalettes(obj){
-    const out = {};
+    const out={};
     if(Array.isArray(obj?.palettes)){
       obj.palettes.forEach(p=>{
         const name=p.name||"Senza nome";
-        const colors={}; for(let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
+        const colors={}; for(let i=1;i<=20;i++) colors[String(i)]=p.colors?.[String(i)]||FALLBACK[String(i)];
         out[name]={name,colors};
       });
     }else{
       Object.entries(obj||{}).forEach(([name,p])=>{
         if(!p?.colors) return;
-        const colors={}; for(let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
+        const colors={}; for(let i=1;i<=20;i++) colors[String(i)]=p.colors?.[String(i)]||FALLBACK[String(i)];
         out[name]={name,colors};
       });
     }
@@ -113,34 +110,24 @@ require([
     const candidates=["./palettes_from_twb.json","./palettes.json","./data/palettes_from_twb.json"];
     for(const url of candidates){
       try{
-        const r=await fetch(url,{cache:"no-store"}); if(!r.ok) continue;
-        PALETTES = normalizePalettes(await r.json());
+        const r=await fetch(url,{cache:"no-store"});
+        if(!r.ok){ log(`Palette 404: ${url}`,"err"); continue; }
+        PALETTES=normalizePalettes(await r.json());
         palInfo.textContent=`Palette caricate da ${url}: ${Object.keys(PALETTES).length}`;
         log(`Palette caricate da ${url}`,"ok");
         refreshLayerCards();
         return;
-      }catch{}
+      }catch(e){ log(`Errore palette ${url}: ${e.message}`,"err"); }
     }
-    PALETTES = { "Default": { name:"Default", colors:{...FALLBACK} } };
+    PALETTES={"Default":{name:"Default",colors:{...FALLBACK}}};
     palInfo.textContent="Nessuna palette trovata (uso fallback).";
     log("Palette non trovate: attivo fallback","err");
     refreshLayerCards();
   }
-  document.getElementById("btnAutoPal").onclick=autoLoadPalettes;
-  document.getElementById("btnLoadPal").onclick=async()=>{
-    const f=document.getElementById("palFile").files[0];
-    if(!f){ alert("Seleziona un file JSON"); return; }
-    try{
-      PALETTES = normalizePalettes(JSON.parse(await f.text()));
-      document.getElementById("palInfo").textContent=`Palette caricate: ${Object.keys(PALETTES).length}`;
-      log("Palette caricate da file","ok");
-      refreshLayerCards();
-    }catch(e){ log("JSON palette non valido","err"); }
-  };
 
-  // --- LAYERS ---
-  const LAYERS = []; // [{layer, title, groupField, paletteName, override: Map(rank->hex)}]
-  function isGeoJSON(o){ return o && ((o.type==="FeatureCollection" && Array.isArray(o.features)) || (o.type==="Feature" && o.geometry)); }
+  // LAYERS
+  const LAYERS=[]; // [{layer,title,groupField,paletteName,override:Object}]
+  function isGeoJSON(o){ return o && ((o.type==="FeatureCollection"&&Array.isArray(o.features))||(o.type==="Feature"&&o.geometry)); }
 
   async function detectGroupField(layer){
     const prefs=["group_20","group","Group","Group20","class","CLASS","clc2012","CLC2012","group_id","Group_ID"];
@@ -156,52 +143,57 @@ require([
     return null;
   }
 
-  function buildRenderer(field, palette, override) {
-    const infos = [];
+  function getOverrideColor(override, rank){
+    if(!override) return null;
+    // supporta sia Map che Object
+    if(typeof override.get === "function") return override.get(rank) || override.get(String(rank)) || null;
+    if(typeof override === "object") return override[rank] || override[String(rank)] || null;
+    return null;
+  }
+
+  function buildRenderer(field, palette, override){
+    const infos=[];
     for(let i=1;i<=20;i++){
-      const rank = String(i);
-      const hex = override?.get(rank) || palette.colors[rank];
+      const rank=String(i);
+      const hex=getOverrideColor(override, rank) || palette.colors[rank];
       infos.push({
         value: rank,
         symbol: new SimpleFillSymbol({
           color: hex,
-          outline: { color:[0,0,0,0], width:0 }   // senza outline
+          outline: { color:[0,0,0,0], width:0 } // no outline
         }),
-        label: `Classe ${rank}`
+        label:`Classe ${rank}`
       });
     }
     return new UniqueValueRenderer({
       field,
-      defaultSymbol: new SimpleFillSymbol({ color:[220,220,220,0.0], outline:{ color:[0,0,0,0], width:0 } }),
+      defaultSymbol:new SimpleFillSymbol({ color:[220,220,220,0], outline:{ color:[0,0,0,0], width:0 } }),
       uniqueValueInfos: infos
     });
   }
 
   function applyPalette(entry){
-    const pal = PALETTES[entry.paletteName] || PALETTES["Default"];
+    const pal=PALETTES[entry.paletteName]||PALETTES["Default"];
     if(!entry.groupField){ log(`${entry.title}: imposta il campo gruppo nella card`,"err"); return; }
-    entry.layer.renderer = buildRenderer(entry.groupField, pal, entry.override);
+    entry.layer.renderer=buildRenderer(entry.groupField, pal, entry.override);
   }
 
-  // 🎲 SHUFFLE: rimescola i colori tra i 20 rank (non cambia i valori del dato)
+  // 🎲 Shuffle robusto (salva override come oggetto semplice)
   function shuffleColors(entry){
-    const pal = PALETTES[entry.paletteName] || PALETTES["Default"];
-    const ranks = Array.from({length:20}, (_,i)=>String(i+1));
-    const colors = ranks.map(r=>pal.colors[r]);
-    // Fisher–Yates
-    for(let i=colors.length-1;i>0;i--){
-      const j = Math.floor(Math.random()*(i+1));
-      [colors[i],colors[j]] = [colors[j],colors[i]];
-    }
-    entry.override = new Map();
-    ranks.forEach((r,i)=> entry.override.set(r, colors[i]));
+    const pal=PALETTES[entry.paletteName]||PALETTES["Default"];
+    const ranks=Array.from({length:20},(_,i)=>String(i+1));
+    const cols=ranks.map(r=>pal.colors[r]);
+    for(let i=cols.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [cols[i],cols[j]]=[cols[j],cols[i]]; }
+    entry.override={}; ranks.forEach((r,i)=> entry.override[r]=cols[i]);
     applyPalette(entry);
   }
 
   async function addFromURL(url){
     try{
-      const resp=await fetch(url,{cache:"no-store"}); if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const obj=await resp.json(); if(!isGeoJSON(obj)) throw new Error("Non è GeoJSON");
+      const resp=await fetch(url,{cache:"no-store"});
+      if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const obj=await resp.json();
+      if(!isGeoJSON(obj)) throw new Error("Non è GeoJSON");
       const blob=new Blob([JSON.stringify(obj)],{type:"application/json"});
       const blobUrl=URL.createObjectURL(blob);
       const layer=new GeoJSONLayer({ url: blobUrl, title: url.split("/").pop() });
@@ -209,7 +201,7 @@ require([
       const entry={ layer, title: layer.title, groupField:null, paletteName:Object.keys(PALETTES)[0]||"Default", override:null };
       LAYERS.push(entry);
       layer.when(async()=>{
-        entry.groupField = await detectGroupField(layer);
+        entry.groupField=await detectGroupField(layer);
         applyPalette(entry);
         refreshLayerCards();
         try{ const ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch{}
@@ -222,7 +214,7 @@ require([
     const wrap=document.getElementById("layersWrap"); wrap.innerHTML="";
     LAYERS.forEach((entry,idx)=>{
       const card=document.createElement("div"); card.className="card";
-      card.innerHTML = `
+      card.innerHTML=`
         <h4>${entry.title}</h4>
         <div class="row">
           <label class="muted" style="width:110px">Campo gruppo</label>
@@ -236,11 +228,9 @@ require([
           <button id="btnApply-${idx}">Applica</button>
           <button id="btnShuffle-${idx}">🎲 Shuffle</button>
           <button id="btnRemove-${idx}">Rimuovi</button>
-        </div>
-      `;
+        </div>`;
       wrap.appendChild(card);
 
-      // palette list
       const sel=card.querySelector(`#pal-${idx}`); sel.innerHTML="";
       Object.keys(PALETTES).forEach(name=>{
         const opt=document.createElement("option"); opt.value=name; opt.textContent=name;
@@ -248,11 +238,11 @@ require([
         sel.appendChild(opt);
       });
 
-      card.querySelector(`#gf-${idx}`).addEventListener("change", e=>{
-        entry.groupField = e.target.value.trim();
+      card.querySelector(`#gf-${idx}`).addEventListener("change",e=>{
+        entry.groupField=e.target.value.trim();
       });
-      sel.addEventListener("change", e=>{
-        entry.paletteName = e.target.value; entry.override=null; // reset override quando cambi palette
+      sel.addEventListener("change",e=>{
+        entry.paletteName=e.target.value; entry.override=null; // reset override quando cambi palette
       });
       card.querySelector(`#btnApply-${idx}`).onclick=()=>applyPalette(entry);
       card.querySelector(`#btnShuffle-${idx}`).onclick=()=>shuffleColors(entry);
@@ -264,7 +254,7 @@ require([
     });
   }
 
-  // --- UI BOTTONI ---
+  // BOTTONI
   document.getElementById("btnLoadDefault").onclick=()=> addFromURL("./CLC2012_Export_FeaturesToJSO.geojson");
   document.getElementById("btnAddUrl").onclick=()=>{
     const u=(document.getElementById("urlInput").value||"").trim();
@@ -281,7 +271,7 @@ require([
         const entry={ layer, title:f.name, groupField:null, paletteName:Object.keys(PALETTES)[0]||"Default", override:null };
         LAYERS.push(entry);
         layer.when(async()=>{
-          entry.groupField = await detectGroupField(layer);
+          entry.groupField=await detectGroupField(layer);
           applyPalette(entry);
           refreshLayerCards();
           try{ const ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch{}
