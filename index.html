@@ -1,186 +1,241 @@
 <!doctype html>
 <html lang="it">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Corine Land Cover – Palette da quadri</title>
-  <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
-  <script src="https://js.arcgis.com/4.33/"></script>
-  <style>
-    html, body, #viewDiv { height:100%; margin:0; padding:0; }
-    #panel {
-      position:absolute; top:10px; left:10px; z-index:10;
-      background:#fff; padding:12px; border-radius:8px;
-      font-family:system-ui,sans-serif; font-size:13px;
-      box-shadow:0 2px 8px rgba(0,0,0,.25); min-width:280px;
-    }
-    #panel h3 { margin:0 0 8px; font-size:14px; }
-    #log { max-height:120px; overflow:auto; font-size:12px; }
-    .ok { color:#166534; }
-    .err { color:#b91c1c; }
-    select, button, input { margin-top:4px; font-size:13px; }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Corine – multi dataset & palette</title>
+<link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
+<script src="https://js.arcgis.com/4.33/"></script>
+<style>
+  html,body,#viewDiv{height:100%;margin:0}
+  #panel{
+    position:absolute;top:10px;left:10px;z-index:10;background:#fff;padding:12px;border-radius:10px;
+    box-shadow:0 2px 10px rgba(0,0,0,.15);font-family:system-ui,sans-serif;font-size:14px;
+    max-width:420px;max-height:92%;overflow:auto
+  }
+  .row{display:flex;gap:8px;align-items:center;margin:.35rem 0}
+  .grow{flex:1}
+  .card{border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;padding:8px;margin-top:8px}
+  .card h4{margin:.2rem 0 .5rem 0;font-size:14px}
+  .muted{color:#666}
+  .ok{color:#166534}
+  .err{color:#b91c1c}
+  button,select,input{font:inherit}
+  input[type="range"]{width:100%}
+  #log{font-size:12px;max-height:140px;overflow:auto;margin-top:6px}
+  #basemapGalleryDiv {
+    position: absolute;
+    bottom: 15px;
+    right: 15px;
+    z-index: 20;
+    background: white;
+    border-radius: 8px;
+    padding: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    max-height: 200px;
+    overflow:auto;
+  }
+</style>
 </head>
 <body>
 <div id="viewDiv"></div>
+<div id="basemapGalleryDiv"></div>
 
 <div id="panel">
-  <h3>Controlli</h3>
-  <div>
-    <label>Palette:
-      <select id="paletteSelect"></select>
-    </label>
+  <div class="row"><strong>Dati GeoJSON</strong></div>
+  <div class="row">
+    <button id="btnLoadDefault">Carica default</button>
+    <input id="urlInput" class="grow" type="text" placeholder="./nomefile.geojson o URL stessa origine">
+    <button id="btnAddUrl">Aggiungi URL</button>
   </div>
   <div class="row">
-    <input id="palFile" type="file" accept=".json" />
-    <button id="btnLoadPal">Carica palette</button>
+    <input id="fileInput" class="grow" type="file" accept=".geojson" multiple>
+    <span class="muted">oppure file locale</span>
   </div>
-  <div id="palInfo" style="margin:4px 0; font-size:12px; color:#555;"></div>
+
   <hr>
+  <div class="row"><strong>Palette</strong></div>
+  <div class="row">
+    <button id="btnAutoPal">Auto-carica</button>
+    <input id="palFile" class="grow" type="file" accept=".json">
+    <button id="btnLoadPal">Carica da file</button>
+  </div>
+  <div id="palInfo" class="muted"></div>
+
+  <hr>
+  <div><strong>Layer caricati</strong></div>
+  <div id="layersWrap"></div>
+
+  <hr>
+  <div><strong>Log</strong></div>
   <div id="log"></div>
 </div>
 
 <script>
-const GEOJSON_PATH = "./CLC2012_Export_FeaturesToJSO.geojson";
+require([
+  "esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer","esri/renderers/SimpleRenderer",
+  "esri/symbols/SimpleFillSymbol","esri/widgets/BasemapGallery"
+],(Map,MapView,GeoJSONLayer,SimpleRenderer,SimpleFillSymbol,BasemapGallery)=>{
 
-// fallback palette (Gioconda ridotta a 20 colori)
-const FALLBACK = {
-  "1":"#a35a16","2":"#7d3f10","3":"#f1b837","4":"#312914","5":"#805835",
-  "6":"#d3b04c","7":"#2e110d","8":"#cd6b14","9":"#6a6548","10":"#7f6d2d",
-  "11":"#644600","12":"#52461e","13":"#e39226","14":"#973613","15":"#6c2415",
-  "16":"#ffdf5a","17":"#0f0506","18":"#a58936","19":"#606d35","20":"#4d2212"
-};
-
-let PALETTES = { "Default": { name:"Default", colors: FALLBACK } };
-let activePalette = "Default";
-let layer;
-
-const log = (msg, cls="") => {
-  const div = document.getElementById("log");
-  div.innerHTML = `<div class="${cls}">${msg}</div>` + div.innerHTML;
-};
-
-// Funzione: normalizza JSON palette
-function normalizePalettes(obj) {
-  const out = {};
-  if (Array.isArray(obj?.palettes)) {
-    obj.palettes.forEach(p => {
-      const name = p.name || "Senza nome";
-      const colors = {};
-      for (let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
-      out[name] = { name, colors };
-    });
-  } else {
-    Object.entries(obj || {}).forEach(([name, p]) => {
-      if (!p?.colors) return;
-      const colors = {};
-      for (let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
-      out[name] = { name, colors };
-    });
-  }
-  return out;
-}
-
-// Prova caricare palette da file noto
-async function autoLoadPalettes() {
-  const palInfo = document.getElementById("palInfo");
-  const candidates = [
-    "./palettes_from_twb.json",
-    "./palettes.json",
-    "./data/palettes_from_twb.json"
-  ];
-  for (const url of candidates) {
-    try {
-      const r = await fetch(url, { cache:"no-store" });
-      if (!r.ok) continue;
-      const data = await r.json();
-      PALETTES = normalizePalettes(data);
-      palInfo.textContent = `Palette caricate da ${url} (${Object.keys(PALETTES).length})`;
-      refreshPaletteSelect();
-      return;
-    } catch(e) { /* continua */ }
-  }
-  palInfo.textContent = "Nessuna palette trovata. Uso fallback.";
-  refreshPaletteSelect();
-}
-
-// Popola la tendina palette
-function refreshPaletteSelect() {
-  const sel = document.getElementById("paletteSelect");
-  sel.innerHTML = "";
-  Object.keys(PALETTES).forEach(name => {
-    const opt = document.createElement("option");
-    opt.value = name; opt.textContent = name;
-    sel.appendChild(opt);
-  });
-  sel.value = activePalette;
-  applyRenderer();
-}
-
-// Cambia renderer con la palette attiva
-function applyRenderer() {
-  if (!layer) return;
-  const pal = PALETTES[activePalette] || PALETTES["Default"];
-  const renderer = {
-    type: "unique-value",
-    field: "group",
-    uniqueValueInfos: []
-  };
-  for (let i=1;i<=20;i++) {
-    renderer.uniqueValueInfos.push({
-      value: i.toString(),
-      symbol: {
-        type: "simple-fill",
-        color: pal.colors[i],
-        outline: { width: 0.1, color: [50,50,50,0.4] }
-      },
-      label: `Classe ${i}`
-    });
-  }
-  layer.renderer = renderer;
-}
-
-// Esri JS load
-require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (Map,MapView,GeoJSONLayer) => {
   const map = new Map({ basemap:"gray-vector" });
   const view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:6 });
 
-  // GeoJSONLayer da fetch -> Blob
-  fetch(GEOJSON_PATH,{cache:"no-store"}).then(async r=>{
-    if(!r.ok) throw new Error("GeoJSON non trovato");
-    const obj = await r.json();
-    const blob = new Blob([JSON.stringify(obj)],{type:"application/json"});
-    const url = URL.createObjectURL(blob);
+  // sposta controlli zoom in alto a destra
+  view.ui.move("zoom","top-right");
 
-    layer = new GeoJSONLayer({ url, title:"CLC (20 gruppi)", outFields:["*"] });
+  // widget basemap gallery in basso a destra
+  const gallery = new BasemapGallery({
+    view,
+    container: "basemapGalleryDiv"
+  });
+
+  // stato globale
+  let PALETTES = {};
+  const FALLBACK = {
+    "1":"#a35a16","2":"#7d3f10","3":"#f1b837","4":"#312914","5":"#805835",
+    "6":"#d3b04c","7":"#2e110d","8":"#cd6b14","9":"#6a6548","10":"#7f6d2d",
+    "11":"#644600","12":"#52461e","13":"#e39226","14":"#973613","15":"#6c2415",
+    "16":"#ffdf5a","17":"#0f0506","18":"#a58936","19":"#606d35","20":"#4d2212"
+  };
+  const LAYERS = [];
+
+  function log(msg,cls=""){ 
+    const div=document.getElementById("log");
+    const p=document.createElement("div");
+    if(cls) p.className=cls;
+    p.textContent=msg;
+    div.appendChild(p);
+    div.scrollTop=div.scrollHeight;
+  }
+
+  function normalizePalettes(obj) {
+    const out = {};
+    if (Array.isArray(obj?.palettes)) {
+      obj.palettes.forEach(p => {
+        const name = p.name || "Senza nome";
+        const colors = {};
+        for (let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
+        out[name] = { name, colors };
+      });
+    } else {
+      Object.entries(obj || {}).forEach(([name, p]) => {
+        if (!p?.colors) return;
+        const colors = {};
+        for (let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
+        out[name] = { name, colors };
+      });
+    }
+    return out;
+  }
+
+  async function autoLoadPalettes() {
+    const palInfo = document.getElementById("palInfo");
+    const candidates = [
+      "./palettes_from_twb.json",
+      "./palettes.json",
+      "./data/palettes_from_twb.json"
+    ];
+    for (const url of candidates) {
+      try {
+        const r = await fetch(url,{cache:"no-store"});
+        if(!r.ok) continue;
+        const data = await r.json();
+        PALETTES = normalizePalettes(data);
+        palInfo.textContent = `Palette caricate da ${url}: ${Object.keys(PALETTES).length}`;
+        log(`Palette caricate da ${url}`,"ok");
+        refreshLayerCards();
+        return;
+      } catch(e){}
+    }
+    palInfo.textContent="Nessuna palette trovata. Caricane una da file.";
+    log("Palette non trovate","err");
+  }
+
+  function addLayer(url,name){
+    const renderer = new SimpleRenderer({
+      symbol: new SimpleFillSymbol({
+        color:[200,200,200,0.6],
+        outline:{color:[80,80,80],width:0.5}
+      })
+    });
+    const layer = new GeoJSONLayer({
+      url,
+      title: name || url.split("/").pop(),
+      renderer
+    });
     map.add(layer);
+    LAYERS.push(layer);
+    log(`Layer aggiunto: ${layer.title}`,"ok");
+    refreshLayerCards();
+    return layer;
+  }
 
-    layer.when(()=>{
-      log("GeoJSON caricato ✔️","ok");
-      applyRenderer();
-      layer.queryExtent().then(res=>{ if(res.extent) view.goTo(res.extent.expand(1.1)); });
-    }).catch(e=>log("Errore layer: "+e.message,"err"));
-  }).catch(e=>log("Fetch error: "+e.message,"err"));
+  function refreshLayerCards(){
+    const wrap=document.getElementById("layersWrap");
+    wrap.innerHTML="";
+    LAYERS.forEach(layer=>{
+      const card=document.createElement("div");
+      card.className="card";
+      card.innerHTML=`<h4>${layer.title}</h4>`;
+      const sel=document.createElement("select");
+      Object.keys(PALETTES).forEach(name=>{
+        const opt=document.createElement("option");
+        opt.value=name; opt.textContent=name;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change",()=>{
+        applyPalette(layer,PALETTES[sel.value]);
+      });
+      card.appendChild(sel);
+      wrap.appendChild(card);
+    });
+  }
 
-  // Eventi UI
-  document.getElementById("paletteSelect").addEventListener("change", e=>{
-    activePalette = e.target.value;
-    applyRenderer();
+  function applyPalette(layer,palette){
+    if(!palette){log("Nessuna palette selezionata","err");return;}
+    const colors=palette.colors;
+    layer.renderer=new SimpleRenderer({
+      symbol:new SimpleFillSymbol({
+        color:[200,200,200,0.5],
+        outline:{color:[50,50,50],width:0.3}
+      }),
+      visualVariables:[{
+        type:"color",
+        field:"group",
+        stops:Object.entries(colors).map(([k,v])=>({value:Number(k),color:v}))
+      }]
+    });
+    log(`Palette applicata a ${layer.title}: ${palette.name}`,"ok");
+  }
+
+  // bottoni
+  document.getElementById("btnLoadDefault").addEventListener("click",()=>{
+    addLayer("./CLC2012_Export_FeaturesToJSO.geojson","Corine (default)");
+  });
+  document.getElementById("btnAddUrl").addEventListener("click",()=>{
+    const url=document.getElementById("urlInput").value.trim();
+    if(url) addLayer(url);
+  });
+  document.getElementById("fileInput").addEventListener("change",evt=>{
+    [...evt.target.files].forEach(f=>{
+      const url=URL.createObjectURL(f);
+      addLayer(url,f.name);
+    });
+  });
+  document.getElementById("btnAutoPal").addEventListener("click",autoLoadPalettes);
+  document.getElementById("btnLoadPal").addEventListener("click",async()=>{
+    const input=document.getElementById("palFile");
+    if(!input.files[0]) return;
+    try{
+      const txt=await input.files[0].text();
+      PALETTES=normalizePalettes(JSON.parse(txt));
+      document.getElementById("palInfo").textContent=`Palette caricate: ${Object.keys(PALETTES).length}`;
+      log("Palette caricate da file","ok");
+      refreshLayerCards();
+    }catch(e){log("Errore JSON palette","err");}
   });
 
-  document.getElementById("btnLoadPal").addEventListener("click", async ()=>{
-    const f = document.getElementById("palFile").files[0];
-    if(!f) { alert("Seleziona un file JSON"); return; }
-    try {
-      const txt = await f.text();
-      const data = JSON.parse(txt);
-      PALETTES = normalizePalettes(data);
-      document.getElementById("palInfo").textContent =
-        `Palette caricate da file (${Object.keys(PALETTES).length})`;
-      refreshPaletteSelect();
-    } catch(e) { alert("File JSON non valido"); }
-  });
-
+  // carica subito la palette se c'è
   autoLoadPalettes();
 });
 </script>
