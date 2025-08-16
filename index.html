@@ -19,18 +19,36 @@
   .grow{flex:1}
   .card{border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;padding:8px;margin-top:8px}
   .card h4{margin:.2rem 0 .5rem 0;font-size:14px}
-  .muted{color:#666}.ok{color:#166534}.err{color:#b91c1c}
+  .muted{color:#666}
+  .ok{color:#166534}
+  .err{color:#b91c1c}
   button,select,input{font:inherit}
+  input[type="range"]{width:100%}
   #log{font-size:12px;max-height:160px;overflow:auto;margin-top:6px}
-  arcgis-basemap-gallery {
-    position: absolute; bottom: 15px; right: 15px;
-    background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.25);
+
+  /* Basemap: pulsante toggle e pannello compatto, raccoglibile */
+  #bm-toggle{
+    position:absolute;right:15px;bottom:15px;z-index:25;
+    width:40px;height:40px;border-radius:999px;border:none;
+    background:#ffffff; box-shadow:0 2px 8px rgba(0,0,0,.25); cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:18px;
   }
+  #bm-panel{
+    position:absolute;right:15px;bottom:65px;z-index:24;display:none;
+    background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.25);
+    max-height:240px;overflow:auto;padding:4px;min-width:240px;
+  }
+  arcgis-basemap-gallery{display:block}
 </style>
 </head>
 <body>
 <div id="viewDiv"></div>
-<arcgis-basemap-gallery position="bottom-right"></arcgis-basemap-gallery>
+
+<!-- Pulsante toggle e pannello “raccoglibile” per la Basemap Gallery -->
+<button id="bm-toggle" title="Basemap">🗺️</button>
+<div id="bm-panel">
+  <arcgis-basemap-gallery position="bottom-right"></arcgis-basemap-gallery>
+</div>
 
 <div id="panel">
   <div class="row"><strong>Dati GeoJSON</strong></div>
@@ -64,30 +82,37 @@
 
 <script>
 require([
-  "esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer",
-  "esri/renderers/UniqueValueRenderer","esri/symbols/SimpleFillSymbol"
-],(Map,MapView,GeoJSONLayer,UniqueValueRenderer,SimpleFillSymbol)=>{
+  "esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"
+],(Map,MapView,GeoJSONLayer)=>{
 
-  // MAPPA
+  // --- MAPPA ---
   const map = new Map({ basemap:"gray-vector" });
   const view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:6 });
   view.ui.move("zoom","top-right");
 
-  // LOG
+  // Basemap toggle (raccoglibile)
+  const btnBM = document.getElementById("bm-toggle");
+  const pnlBM = document.getElementById("bm-panel");
+  btnBM.addEventListener("click", ()=>{
+    pnlBM.style.display = (pnlBM.style.display==="none" || !pnlBM.style.display) ? "block" : "none";
+  });
+
+  // --- LOG ---
   const log = (msg,cls="")=>{
     const div=document.getElementById("log");
     const el=document.createElement("div"); if(cls) el.className=cls;
     el.textContent=msg; div.appendChild(el); div.scrollTop=div.scrollHeight;
   };
 
-  // PALETTE
+  // --- PALETTE ---
   let PALETTES = {};
   const FALLBACK = {
     "1":"#a35a16","2":"#7d3f10","3":"#f1b837","4":"#312914","5":"#805835",
-    "6":"#d3b04c","7":"#2e110d","8":"#cd6b14","9":"#6a6548","10":"#7f6d2d",
+    "6":"#d3b04c","7":"#2e110d","8":"#cd6b14","9":"#6a6548","10":"#7d3f10",
     "11":"#644600","12":"#52461e","13":"#e39226","14":"#973613","15":"#6c2415",
     "16":"#ffdf5a","17":"#0f0506","18":"#a58936","19":"#606d35","20":"#4d2212"
   };
+
   function normalizePalettes(obj){
     const out={};
     if(Array.isArray(obj?.palettes)){
@@ -105,6 +130,7 @@ require([
     }
     return out;
   }
+
   async function autoLoadPalettes(){
     const palInfo=document.getElementById("palInfo");
     const candidates=["./palettes_from_twb.json","./palettes.json","./data/palettes_from_twb.json"];
@@ -125,9 +151,10 @@ require([
     refreshLayerCards();
   }
 
-  // LAYERS
-  const LAYERS=[]; // [{layer,title,groupField,paletteName,override:Object}]
-  function isGeoJSON(o){ return o && ((o.type==="FeatureCollection"&&Array.isArray(o.features))||(o.type==="Feature"&&o.geometry)); }
+  // --- LAYERS ---
+  // entry: { layer, title, groupField, paletteName, override:Object, opacity:number }
+  const LAYERS=[];
+  function isGeoJSON(o){return o && ((o.type==="FeatureCollection"&&Array.isArray(o.features))||(o.type==="Feature"&&o.geometry));}
 
   async function detectGroupField(layer){
     const prefs=["group_20","group","Group","Group20","class","CLASS","clc2012","CLC2012","group_id","Group_ID"];
@@ -143,49 +170,50 @@ require([
     return null;
   }
 
+  // colori override: oggetto { "1":"#hex", ... }
   function getOverrideColor(override, rank){
     if(!override) return null;
-    // supporta sia Map che Object
-    if(typeof override.get === "function") return override.get(rank) || override.get(String(rank)) || null;
-    if(typeof override === "object") return override[rank] || override[String(rank)] || null;
-    return null;
+    return override[rank] || override[String(rank)] || null;
   }
 
   function buildRenderer(field, palette, override){
     const infos=[];
     for(let i=1;i<=20;i++){
       const rank=String(i);
-      const hex=getOverrideColor(override, rank) || palette.colors[rank];
+      const hex=getOverrideColor(override,rank) || palette.colors[rank];
       infos.push({
         value: rank,
-        symbol: new SimpleFillSymbol({
+        symbol: {
+          type:"simple-fill",
           color: hex,
-          outline: { color:[0,0,0,0], width:0 } // no outline
-        }),
+          outline: { color:[0,0,0,0], width:0 } // NO outline
+        },
         label:`Classe ${rank}`
       });
     }
-    return new UniqueValueRenderer({
+    return {
+      type:"unique-value",
       field,
-      defaultSymbol:new SimpleFillSymbol({ color:[220,220,220,0], outline:{ color:[0,0,0,0], width:0 } }),
+      defaultSymbol:{ type:"simple-fill", color:[220,220,220,0], outline:{ color:[0,0,0,0], width:0 } },
       uniqueValueInfos: infos
-    });
+    };
   }
 
   function applyPalette(entry){
     const pal=PALETTES[entry.paletteName]||PALETTES["Default"];
     if(!entry.groupField){ log(`${entry.title}: imposta il campo gruppo nella card`,"err"); return; }
-    entry.layer.renderer=buildRenderer(entry.groupField, pal, entry.override);
+    entry.layer.renderer = buildRenderer(entry.groupField, pal, entry.override);
+    entry.layer.opacity = entry.opacity ?? 1;
   }
 
-  // 🎲 Shuffle robusto (salva override come oggetto semplice)
+  // 🎲 Shuffle: rimescola i colori e RI-RENDERIZZA SUBITO
   function shuffleColors(entry){
     const pal=PALETTES[entry.paletteName]||PALETTES["Default"];
     const ranks=Array.from({length:20},(_,i)=>String(i+1));
     const cols=ranks.map(r=>pal.colors[r]);
     for(let i=cols.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [cols[i],cols[j]]=[cols[j],cols[i]]; }
     entry.override={}; ranks.forEach((r,i)=> entry.override[r]=cols[i]);
-    applyPalette(entry);
+    applyPalette(entry); // <<< re-render immediato
   }
 
   async function addFromURL(url){
@@ -198,7 +226,7 @@ require([
       const blobUrl=URL.createObjectURL(blob);
       const layer=new GeoJSONLayer({ url: blobUrl, title: url.split("/").pop() });
       map.add(layer);
-      const entry={ layer, title: layer.title, groupField:null, paletteName:Object.keys(PALETTES)[0]||"Default", override:null };
+      const entry={ layer, title: layer.title, groupField:null, paletteName:Object.keys(PALETTES)[0]||"Default", override:null, opacity:1 };
       LAYERS.push(entry);
       layer.when(async()=>{
         entry.groupField=await detectGroupField(layer);
@@ -225,12 +253,18 @@ require([
           <select id="pal-${idx}" class="grow"></select>
         </div>
         <div class="row">
-          <button id="btnApply-${idx}">Applica</button>
+          <label class="muted" style="width:110px">Trasparenza</label>
+          <input id="op-${idx}" type="range" min="0" max="1" step="0.05" value="${entry.opacity??1}">
+        </div>
+        <div class="row">
           <button id="btnShuffle-${idx}">🎲 Shuffle</button>
+          <button id="btnApply-${idx}">Applica</button>
           <button id="btnRemove-${idx}">Rimuovi</button>
-        </div>`;
+        </div>
+      `;
       wrap.appendChild(card);
 
+      // palette list
       const sel=card.querySelector(`#pal-${idx}`); sel.innerHTML="";
       Object.keys(PALETTES).forEach(name=>{
         const opt=document.createElement("option"); opt.value=name; opt.textContent=name;
@@ -238,15 +272,19 @@ require([
         sel.appendChild(opt);
       });
 
-      card.querySelector(`#gf-${idx}`).addEventListener("change",e=>{
-        entry.groupField=e.target.value.trim();
+      card.querySelector(`#gf-${idx}`).addEventListener("change", e=>{
+        entry.groupField = e.target.value.trim();
       });
-      sel.addEventListener("change",e=>{
-        entry.paletteName=e.target.value; entry.override=null; // reset override quando cambi palette
+      sel.addEventListener("change", e=>{
+        entry.paletteName = e.target.value; entry.override=null; applyPalette(entry);
       });
-      card.querySelector(`#btnApply-${idx}`).onclick=()=>applyPalette(entry);
-      card.querySelector(`#btnShuffle-${idx}`).onclick=()=>shuffleColors(entry);
-      card.querySelector(`#btnRemove-${idx}`).onclick=()=>{
+      card.querySelector(`#op-${idx}`).addEventListener("input", e=>{
+        entry.opacity = Number(e.target.value);
+        entry.layer.opacity = entry.opacity;
+      });
+      card.querySelector(`#btnShuffle-${idx}`).onclick = ()=> shuffleColors(entry);   // re-render immediato
+      card.querySelector(`#btnApply-${idx}`).onclick   = ()=> applyPalette(entry);
+      card.querySelector(`#btnRemove-${idx}`).onclick  = ()=>{
         map.remove(entry.layer);
         LAYERS.splice(idx,1);
         refreshLayerCards();
@@ -268,7 +306,7 @@ require([
         const url=URL.createObjectURL(new Blob([JSON.stringify(obj)],{type:"application/json"}));
         const layer=new GeoJSONLayer({ url, title:f.name });
         map.add(layer);
-        const entry={ layer, title:f.name, groupField:null, paletteName:Object.keys(PALETTES)[0]||"Default", override:null };
+        const entry={ layer, title:f.name, groupField:null, paletteName:Object.keys(PALETTES)[0]||"Default", override:null, opacity:1 };
         LAYERS.push(entry);
         layer.when(async()=>{
           entry.groupField=await detectGroupField(layer);
