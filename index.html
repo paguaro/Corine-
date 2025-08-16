@@ -6,7 +6,7 @@
 <title>Corine – multi dataset & palette</title>
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
 <script src="https://js.arcgis.com/4.33/"></script>
-<!-- Nuovo componente per basemap gallery -->
+<!-- Web component basemap gallery -->
 <script type="module" src="https://js.arcgis.com/map-components/4.33/arcgis-basemap-gallery.js"></script>
 <style>
   html,body,#viewDiv{height:100%;margin:0}
@@ -16,11 +16,14 @@
     max-width:420px;max-height:92%;overflow:auto
   }
   .row{display:flex;gap:8px;align-items:center;margin:.35rem 0}
+  .grow{flex:1}
   .card{border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;padding:8px;margin-top:8px}
   .card h4{margin:.2rem 0 .5rem 0;font-size:14px}
   .muted{color:#666}
   .ok{color:#166534}
   .err{color:#b91c1c}
+  button,select,input{font:inherit}
+  input[type="range"]{width:100%}
   #log{font-size:12px;max-height:140px;overflow:auto;margin-top:6px}
   arcgis-basemap-gallery {
     position: absolute;
@@ -34,8 +37,6 @@
 </head>
 <body>
 <div id="viewDiv"></div>
-
-<!-- nuovo widget basemap -->
 <arcgis-basemap-gallery position="bottom-right"></arcgis-basemap-gallery>
 
 <div id="panel">
@@ -46,7 +47,7 @@
     <button id="btnAddUrl">Aggiungi URL</button>
   </div>
   <div class="row">
-    <input id="fileInput" type="file" accept=".geojson" multiple>
+    <input id="fileInput" class="grow" type="file" accept=".geojson" multiple>
     <span class="muted">oppure file locale</span>
   </div>
 
@@ -54,7 +55,7 @@
   <div class="row"><strong>Palette</strong></div>
   <div class="row">
     <button id="btnAutoPal">Auto-carica</button>
-    <input id="palFile" type="file" accept=".json">
+    <input id="palFile" class="grow" type="file" accept=".json">
     <button id="btnLoadPal">Carica da file</button>
   </div>
   <div id="palInfo" class="muted"></div>
@@ -70,13 +71,24 @@
 
 <script>
 require([
-  "esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer","esri/renderers/UniqueValueRenderer","esri/symbols/SimpleFillSymbol"
+  "esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer",
+  "esri/renderers/UniqueValueRenderer","esri/symbols/SimpleFillSymbol"
 ],(Map,MapView,GeoJSONLayer,UniqueValueRenderer,SimpleFillSymbol)=>{
 
+  // --- MAPPA ---
   const map = new Map({ basemap:"gray-vector" });
   const view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:6 });
   view.ui.move("zoom","top-right");
 
+  // --- LOG ---
+  const log = (msg,cls="")=>{
+    const div=document.getElementById("log");
+    const el=document.createElement("div");
+    if(cls) el.className=cls;
+    el.textContent=msg; div.appendChild(el); div.scrollTop=div.scrollHeight;
+  };
+
+  // --- PALETTE ---
   let PALETTES = {};
   const FALLBACK = {
     "1":"#a35a16","2":"#7d3f10","3":"#f1b837","4":"#312914","5":"#805835",
@@ -84,130 +96,191 @@ require([
     "11":"#644600","12":"#52461e","13":"#e39226","14":"#973613","15":"#6c2415",
     "16":"#ffdf5a","17":"#0f0506","18":"#a58936","19":"#606d35","20":"#4d2212"
   };
-  const LAYERS = [];
-
-  function log(msg,cls=""){ 
-    const div=document.getElementById("log");
-    const p=document.createElement("div"); if(cls) p.className=cls;
-    p.textContent=msg; div.appendChild(p); div.scrollTop=div.scrollHeight;
-  }
-
-  function normalizePalettes(obj) {
+  function normalizePalettes(obj){
     const out = {};
-    if (Array.isArray(obj?.palettes)) {
-      obj.palettes.forEach(p => {
-        const name = p.name || "Senza nome";
-        const colors = {};
-        for (let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
-        out[name] = { name, colors };
+    if(Array.isArray(obj?.palettes)){
+      obj.palettes.forEach(p=>{
+        const name=p.name||"Senza nome";
+        const colors={}; for(let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
+        out[name]={name,colors};
       });
-    } else {
-      Object.entries(obj || {}).forEach(([name, p]) => {
-        if (!p?.colors) return;
-        const colors = {};
-        for (let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
-        out[name] = { name, colors };
+    }else{
+      Object.entries(obj||{}).forEach(([name,p])=>{
+        if(!p?.colors) return;
+        const colors={}; for(let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
+        out[name]={name,colors};
       });
     }
     return out;
   }
-
-  async function autoLoadPalettes() {
-    const palInfo = document.getElementById("palInfo");
-    try {
-      const r = await fetch("./palettes_from_twb.json",{cache:"no-store"});
-      if(!r.ok) throw "not found";
-      const data = await r.json();
-      PALETTES = normalizePalettes(data);
-      palInfo.textContent = `Palette caricate: ${Object.keys(PALETTES).length}`;
-      log("Palette caricate","ok");
-      refreshLayerCards();
-    } catch(e){
-      palInfo.textContent="Nessuna palette trovata";
-      log("Palette non trovate","err");
+  async function autoLoadPalettes(){
+    const palInfo=document.getElementById("palInfo");
+    const candidates=["./palettes_from_twb.json","./palettes.json","./data/palettes_from_twb.json"];
+    for(const url of candidates){
+      try{
+        const r=await fetch(url,{cache:"no-store"}); if(!r.ok) continue;
+        PALETTES = normalizePalettes(await r.json());
+        palInfo.textContent=`Palette caricate da ${url}: ${Object.keys(PALETTES).length}`;
+        log(`Palette caricate da ${url}`,"ok");
+        refreshLayerCards();
+        return;
+      }catch{}
     }
-  }
-
-  function addLayer(url,name){
-    const renderer = new UniqueValueRenderer({
-      field:"group",
-      defaultSymbol:new SimpleFillSymbol({color:[200,200,200,0.5],outline:{color:"gray",width:0.3}})
-    });
-    const layer = new GeoJSONLayer({
-      url,
-      title: name || url.split("/").pop(),
-      renderer
-    });
-    map.add(layer);
-    LAYERS.push(layer);
-    log(`Layer aggiunto: ${layer.title}`,"ok");
+    PALETTES = { "Default": { name:"Default", colors:{...FALLBACK} } };
+    palInfo.textContent="Nessuna palette trovata (uso fallback).";
+    log("Palette non trovate: attivo fallback","err");
     refreshLayerCards();
   }
-
-  function refreshLayerCards(){
-    const wrap=document.getElementById("layersWrap");
-    wrap.innerHTML="";
-    LAYERS.forEach(layer=>{
-      const card=document.createElement("div");
-      card.className="card";
-      card.innerHTML=`<h4>${layer.title}</h4>`;
-      const sel=document.createElement("select");
-      Object.keys(PALETTES).forEach(name=>{
-        const opt=document.createElement("option");
-        opt.value=name; opt.textContent=name;
-        sel.appendChild(opt);
-      });
-      sel.addEventListener("change",()=>{
-        applyPalette(layer,PALETTES[sel.value]);
-      });
-      card.appendChild(sel);
-      wrap.appendChild(card);
-    });
-  }
-
-  function applyPalette(layer,palette){
-    if(!palette){log("Nessuna palette selezionata","err");return;}
-    const colors=palette.colors;
-    const renderer = new UniqueValueRenderer({
-      field:"group",
-      defaultSymbol:new SimpleFillSymbol({color:[220,220,220,0.4],outline:{color:"gray",width:0.3}}),
-      uniqueValueInfos:Object.entries(colors).map(([k,v])=>({
-        value:k,
-        symbol:new SimpleFillSymbol({color:v,outline:{color:"black",width:0.2}})
-      }))
-    });
-    layer.renderer=renderer;
-    log(`Palette applicata a ${layer.title}: ${palette.name}`,"ok");
-  }
-
-  // bottoni
-  document.getElementById("btnLoadDefault").addEventListener("click",()=>{
-    addLayer("./CLC2012_Export_FeaturesToJSO.geojson","Corine (default)");
-  });
-  document.getElementById("btnAddUrl").addEventListener("click",()=>{
-    const url=document.getElementById("urlInput").value.trim();
-    if(url) addLayer(url);
-  });
-  document.getElementById("fileInput").addEventListener("change",evt=>{
-    [...evt.target.files].forEach(f=>{
-      const url=URL.createObjectURL(f);
-      addLayer(url,f.name);
-    });
-  });
-  document.getElementById("btnAutoPal").addEventListener("click",autoLoadPalettes);
-  document.getElementById("btnLoadPal").addEventListener("click",async()=>{
-    const input=document.getElementById("palFile");
-    if(!input.files[0]) return;
+  document.getElementById("btnAutoPal").onclick=autoLoadPalettes;
+  document.getElementById("btnLoadPal").onclick=async()=>{
+    const f=document.getElementById("palFile").files[0];
+    if(!f){ alert("Seleziona un file JSON"); return; }
     try{
-      const txt=await input.files[0].text();
-      PALETTES=normalizePalettes(JSON.parse(txt));
+      PALETTES = normalizePalettes(JSON.parse(await f.text()));
       document.getElementById("palInfo").textContent=`Palette caricate: ${Object.keys(PALETTES).length}`;
       log("Palette caricate da file","ok");
       refreshLayerCards();
-    }catch(e){log("Errore JSON palette","err");}
+    }catch(e){ log("JSON palette non valido","err"); }
+  };
+
+  // --- LAYERS ---
+  const LAYERS = []; // [{layer, title, groupField, paletteName}]
+  function isGeoJSON(o){ return o && ((o.type==="FeatureCollection" && Array.isArray(o.features)) || (o.type==="Feature" && o.geometry)); }
+
+  async function detectGroupField(layer){
+    const prefs=["group_20","group","Group","Group20","class","CLASS","clc2012","CLC2012","group_id","Group_ID"];
+    try{
+      const q=layer.createQuery(); q.outFields=["*"]; q.returnGeometry=false; q.num=1;
+      const r=await layer.queryFeatures(q);
+      if(r.features.length){
+        const attrs=r.features[0].attributes;
+        for(const k of prefs){ if(k in attrs) return k; }
+        const keys=Object.keys(attrs); return keys.find(k=>k!=="OBJECTID"&&k!=="FID")||keys[0]||null;
+      }
+    }catch{}
+    return null;
+  }
+
+  function buildRenderer(field, palette) {
+    const infos = [];
+    for(let i=1;i<=20;i++){
+      infos.push({
+        value: i.toString(),
+        symbol: new SimpleFillSymbol({
+          color: palette.colors[String(i)],
+          outline: { color:[0,0,0,0], width: 0 }   // <-- niente outline
+        }),
+        label: `Classe ${i}`
+      });
+    }
+    return new UniqueValueRenderer({
+      field,
+      defaultSymbol: new SimpleFillSymbol({ color:[220,220,220,0.0], outline:{ color:[0,0,0,0], width:0 } }),
+      uniqueValueInfos: infos
+    });
+  }
+
+  async function addFromURL(url){
+    try{
+      const resp=await fetch(url,{cache:"no-store"}); if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const obj=await resp.json(); if(!isGeoJSON(obj)) throw new Error("Non è GeoJSON");
+      const blob=new Blob([JSON.stringify(obj)],{type:"application/json"});
+      const blobUrl=URL.createObjectURL(blob);
+      const layer=new GeoJSONLayer({ url: blobUrl, title: url.split("/").pop() });
+      map.add(layer);
+      const entry={ layer, title: layer.title, groupField:null, paletteName:Object.keys(PALETTES)[0]||"Default" };
+      LAYERS.push(entry);
+      layer.when(async()=>{
+        entry.groupField = await detectGroupField(layer);
+        applyPalette(entry);
+        refreshLayerCards();
+        try{ const ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch{}
+        log(`Caricato: ${url}`,"ok");
+      }).catch(e=>log(`Errore layer: ${e.message}`,"err"));
+    }catch(e){ log(`Errore URL ${url}: ${e.message}`,"err"); }
+  }
+
+  function applyPalette(entry){
+    const pal = PALETTES[entry.paletteName] || PALETTES["Default"];
+    if(!entry.groupField){ log(`${entry.title}: imposta il campo gruppo nella card`,"err"); return; }
+    entry.layer.renderer = buildRenderer(entry.groupField, pal);
+  }
+
+  function refreshLayerCards(){
+    const wrap=document.getElementById("layersWrap"); wrap.innerHTML="";
+    LAYERS.forEach((entry,idx)=>{
+      const card=document.createElement("div"); card.className="card";
+      card.innerHTML = `
+        <h4>${entry.title}</h4>
+        <div class="row">
+          <label class="muted" style="width:110px">Campo gruppo</label>
+          <input id="gf-${idx}" class="grow" type="text" value="${entry.groupField??''}" placeholder="es. group_20">
+        </div>
+        <div class="row">
+          <label class="muted" style="width:110px">Palette</label>
+          <select id="pal-${idx}" class="grow"></select>
+        </div>
+        <div class="row">
+          <button id="btnApply-${idx}">Applica</button>
+          <button id="btnRemove-${idx}">Rimuovi</button>
+        </div>
+      `;
+      wrap.appendChild(card);
+
+      // palette list
+      const sel=card.querySelector(`#pal-${idx}`); sel.innerHTML="";
+      Object.keys(PALETTES).forEach(name=>{
+        const opt=document.createElement("option"); opt.value=name; opt.textContent=name;
+        if(name===entry.paletteName) opt.selected=true;
+        sel.appendChild(opt);
+      });
+
+      card.querySelector(`#gf-${idx}`).addEventListener("change", e=>{
+        entry.groupField = e.target.value.trim();
+      });
+      sel.addEventListener("change", e=>{
+        entry.paletteName = e.target.value;
+      });
+      card.querySelector(`#btnApply-${idx}`).onclick=()=>applyPalette(entry);
+      card.querySelector(`#btnRemove-${idx}`).onclick=()=>{
+        map.remove(entry.layer);
+        LAYERS.splice(idx,1);
+        refreshLayerCards();
+      };
+    });
+  }
+
+  // --- UI BOTTONI ---
+  document.getElementById("btnLoadDefault").onclick=()=> addFromURL("./CLC2012_Export_FeaturesToJSO.geojson");
+  document.getElementById("btnAddUrl").onclick=()=>{
+    const u=(document.getElementById("urlInput").value||"").trim();
+    if(u) addFromURL(u);
+  };
+  document.getElementById("fileInput").addEventListener("change", async ev=>{
+    for(const f of ev.target.files){
+      try{
+        const obj=JSON.parse(await f.text());
+        if(!isGeoJSON(obj)){ log(`"${f.name}" non è GeoJSON`,"err"); continue; }
+        const url=URL.createObjectURL(new Blob([JSON.stringify(obj)],{type:"application/json"}));
+        const layer=new GeoJSONLayer({ url, title:f.name });
+        map.add(layer);
+        const entry={ layer, title:f.name, groupField:null, paletteName:Object.keys(PALETTES)[0]||"Default" };
+        LAYERS.push(entry);
+        layer.when(async()=>{
+          entry.groupField = await detectGroupField(layer);
+          applyPalette(entry);
+          refreshLayerCards();
+          try{ const ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch{}
+          log(`Caricato file: ${f.name}`,"ok");
+        });
+      }catch(e){ log(`Errore file ${f.name}: ${e.message}`,"err"); }
+    }
+    ev.target.value="";
   });
 
+  // avvio: prova palette e default
   autoLoadPalettes();
+  addFromURL("./CLC2012_Export_FeaturesToJSO.geojson");
 });
 </script>
 </body>
