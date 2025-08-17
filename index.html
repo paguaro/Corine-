@@ -17,7 +17,7 @@
   #panel{
     position:absolute;left:12px;top:62px;z-index:29;display:none;
     background:#fff;padding:12px;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.2);
-    font-family:system-ui,sans-serif;font-size:14px;max-width:480px;max-height:80vh;overflow:auto
+    font-family:system-ui,sans-serif;font-size:14px;max-width:520px;max-height:80vh;overflow:auto
   }
   .row{display:flex;gap:8px;align-items:center;margin:.35rem 0}
   .col{display:flex;flex-direction:column;gap:6px}
@@ -63,7 +63,7 @@
     <div><strong>Dati GeoJSON</strong></div>
     <div class="row">
       <button id="btnLoadDefault" title="Carica dal repo (raw GitHub)">Carica default</button>
-      <input id="urlInput" class="grow" type="text" placeholder="./nomefile.geojson o URL stessa origine / raw">
+      <input id="urlInput" class="grow" type="text" placeholder="./file.geojson o URL raw">
       <button id="btnAddUrl">Aggiungi URL</button>
     </div>
     <div class="row">
@@ -106,8 +106,10 @@
 </div>
 
 <script>
-require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"],
-(Map,MapView,GeoJSONLayer)=>{
+require([
+  "esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer",
+  "esri/geometry/geometryEngine"
+],(Map,MapView,GeoJSONLayer,geometryEngine)=>{
 
   // --- MAPPA ---
   const map = new Map({ basemap:"gray-vector" });
@@ -135,26 +137,28 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"],
   };
 
   // --- PALETTE ---
-  let PALETTES = {}; // name -> {name, colors{1..20}}
   const FALLBACK = {
     "1":"#a35a16","2":"#7d3f10","3":"#f1b837","4":"#312914","5":"#805835",
     "6":"#d3b04c","7":"#2e110d","8":"#cd6b14","9":"#6a6548","10":"#7f6d2d",
     "11":"#644600","12":"#52461e","13":"#e39226","14":"#973613","15":"#6c2415",
     "16":"#ffdf5a","17":"#0f0506","18":"#a58936","19":"#606d35","20":"#4d2212"
   };
+  // Sempre una palette valida disponibile
+  let PALETTES = { "Default": { name:"Default", colors:{...FALLBACK} } };
+  let activePaletteName = "Default";
 
   function normalizePalettes(obj){
     const out={};
     if(Array.isArray(obj?.palettes)){
       obj.palettes.forEach(p=>{
         const name=p.name||"Senza nome";
-        const colors={}; for(let i=1;i<=20;i++) colors[String(i)]=p.colors?.[String(i)]||FALLBACK[String(i)];
+        const colors={}; for(let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
         out[name]={name,colors};
       });
     }else{
       Object.entries(obj||{}).forEach(([name,p])=>{
         if(!p?.colors) return;
-        const colors={}; for(let i=1;i<=20;i++) colors[String(i)]=p.colors?.[String(i)]||FALLBACK[String(i)];
+        const colors={}; for(let i=1;i<=20;i++) colors[String(i)] = p.colors?.[String(i)] || FALLBACK[String(i)];
         out[name]={name,colors};
       });
     }
@@ -167,14 +171,19 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"],
       const r=await fetch("./palettes_from_twb.json",{cache:"no-store"});
       if(!r.ok) throw new Error("404 palettes_from_twb.json");
       const data=await r.json();
-      PALETTES=normalizePalettes(data);
+      const norm=normalizePalettes(data);
+      // mantieni Default + aggiungi le altre
+      PALETTES = { ...PALETTES, ...norm };
+      // se la palette attiva non esiste nelle nuove, scegli la prima disponibile
+      if(!PALETTES[activePaletteName]){
+        const first=Object.keys(PALETTES)[0]; if(first) activePaletteName=first;
+      }
       palInfo.textContent=`Palette caricate: ${Object.keys(PALETTES).length}`;
       renderPaletteCards();
+      applyPaletteToAll(); // re-render quando arrivano
     }catch(e){
-      PALETTES={"Default":{name:"Default",colors:{...FALLBACK}}};
-      palInfo.textContent="Nessuna palette trovata: uso fallback 'Default'.";
       renderPaletteCards();
-      log("Palette non trovate in root.","err");
+      log("Palette non trovate in root: uso solo 'Default'.","err");
     }
   }
 
@@ -185,7 +194,6 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"],
       const card=document.createElement("div"); card.className="palCard";
       const name=document.createElement("div"); name.className="palName"; name.textContent=p.name;
       const swGrid=document.createElement("div"); swGrid.className="swatchGrid";
-      // mostra TUTTI i 20 colori (ordine 1..20)
       for(let i=1;i<=20;i++){
         const sw=document.createElement("div"); sw.className="sw";
         sw.style.background = p.colors[String(i)] || "#ccc";
@@ -198,9 +206,8 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"],
   }
 
   // --- LAYERS & RENDERING ---
-  // entry: { layer, title, groupField, paletteName, override:Object, opacity:number }
+  // entry: { layer, title, groupField, paletteName, override:Object, opacity:number, rankByGroup:Map }
   const LAYERS=[];
-  let activePaletteName = "Default";
 
   function isGeoJSON(o){ return o && ((o.type==="FeatureCollection"&&Array.isArray(o.features))||(o.type==="Feature"&&o.geometry)); }
 
@@ -218,41 +225,138 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"],
     return null;
   }
 
+  // Calcola ranking per "frequenza + area"
+  async function computeRankAreaFreq(entry){
+    const layer = entry.layer;
+    const gf = entry.groupField;
+    if(!gf) return null;
+    const q = layer.createQuery();
+    q.returnGeometry = true;
+    q.outFields = [gf];
+    q.where = "1=1";
+    q.outSpatialReference = { wkid: 4326 };
+    const res = await layer.queryFeatures(q);
+    const areaBy = new Map();
+    const countBy = new Map();
+
+    for(const f of res.features){
+      const gid = f.attributes[gf];
+      const geom = f.geometry;
+      let a = 0;
+      try{
+        a = Math.abs(geometryEngine.geodesicArea(geom,"square-meters")) || 0;
+      }catch{ a = 0; }
+      areaBy.set(gid, (areaBy.get(gid)||0) + a);
+      countBy.set(gid, (countBy.get(gid)||0) + 1);
+    }
+
+    const gids = Array.from(areaBy.keys());
+    const areas = gids.map(g=>areaBy.get(g));
+    const counts = gids.map(g=>countBy.get(g));
+    const aMax = Math.max(1, ...areas);
+    const cMax = Math.max(1, ...counts);
+
+    // score = area_norm + count_norm
+    const score = new Map();
+    gids.forEach(g=>{
+      const s = (areaBy.get(g)/aMax) + (countBy.get(g)/cMax);
+      score.set(g, s);
+    });
+
+    // ordina desc per score
+    const sorted = Array.from(score.entries()).sort((a,b)=> b[1]-a[1]).map(([g])=>g);
+    // mappa gid -> rank (1..n), dove rank più alto = ultimo; useremo poi colori 20..1
+    const ranks = new Map();
+    sorted.forEach((g, i)=> ranks.set(g, i+1)); // 1 = più alto
+    return { ranks, order: sorted };
+  }
+
   // override è oggetto {"1":"#hex",...}
   function getOverrideColor(override, rank){ return override ? (override[rank]||override[String(rank)]||null) : null; }
 
-  function buildRenderer(field, palette, override){
-    const infos=[];
-    for(let i=1;i<=20;i++){
-      const rank=String(i);
-      const hex = getOverrideColor(override,rank) || palette.colors[rank] || "#cccccc";
-      infos.push({
-        value: rank,
-        symbol: { type:"simple-fill", color: hex, outline:{ color:[0,0,0,0], width:0 } },
-        label: `Classe ${rank}`
+  function buildRenderer(field, palette, override, rankOrder){
+    // rankOrder: array di gid ordinati per score (desc). se presente, assegno i 20 colori in quell'ordine.
+    const uvInfos = [];
+    if (Array.isArray(rankOrder) && rankOrder.length){
+      // assegna colori 20..1 ai gruppi nell'ordine
+      const paletteKeys = Array.from({length:20},(_,i)=>String(i+1)); // "1".. "20"
+      const colorOrder = paletteKeys.map(k=>palette.colors[k]);
+      // vogliamo che il più "grande" prenda il colore 20:
+      const ascColors = colorOrder;           // [1..20]
+      const descColors = ascColors.slice().reverse(); // [20..1]
+      rankOrder.forEach((gid, idx)=>{
+        // se più di 20 classi, dopo la 20 usiamo default gray
+        const hex = idx < 20
+          ? (getOverrideColor(override, String(20-idx)) || descColors[idx]) // se override presente rispetta la posizione
+          : "#cccccc";
+        uvInfos.push({
+          value: gid,
+          symbol: { type:"simple-fill", color: hex, outline:{ color:[0,0,0,0], width:0 } },
+          label: `Gruppo ${gid}`
+        });
       });
+    }else{
+      // fallback: mappa 1..20 direttamente
+      for(let i=1;i<=20;i++){
+        const rank=String(i);
+        const hex = getOverrideColor(override,rank) || palette.colors[rank] || "#cccccc";
+        uvInfos.push({
+          value: rank,
+          symbol: { type:"simple-fill", color: hex, outline:{ color:[0,0,0,0], width:0 } },
+          label: `Classe ${rank}`
+        });
+      }
     }
-    return { type:"unique-value", field, uniqueValueInfos:infos,
+
+    return {
+      type:"unique-value",
+      field,
+      uniqueValueInfos: uvInfos,
       defaultSymbol:{ type:"simple-fill", color:[220,220,220,0], outline:{ color:[0,0,0,0], width:0 } }
     };
   }
 
-  function applyPalette(entry){
-    const pal = PALETTES[entry.paletteName] || PALETTES[activePaletteName] || PALETTES["Default"];
+  async function applyPalette(entry, recalc=false){
+    // scegli una palette valida in ogni caso
+    const pal =
+      (entry.paletteName && PALETTES[entry.paletteName]) ||
+      (PALETTES[activePaletteName]) ||
+      (PALETTES["Default"]) ||
+      { name:"Fallback", colors:{...FALLBACK} };
+
     if(!entry.groupField){ log(`${entry.title}: imposta il campo gruppo nella card`,"err"); return; }
-    entry.layer.renderer = buildRenderer(entry.groupField, pal, entry.override);
+
+    // Se recalc (o non abbiamo ancora ranking), calcola ranking area+freq
+    if(recalc || !entry.rankOrder){
+      try{
+        const res = await computeRankAreaFreq(entry);
+        entry.rankOrder = res?.order || null; // array di gid ordinati per score
+      }catch(e){
+        log(`Ranking area+freq fallito: ${e.message}`,"err");
+        entry.rankOrder = null;
+      }
+      // quando ricalcolo, cancello eventuale shuffle
+      entry.override = null;
+    }
+
+    entry.layer.renderer = buildRenderer(entry.groupField, pal, entry.override, entry.rankOrder);
     entry.layer.opacity = entry.opacity ?? 0.7;
   }
 
-  function applyPaletteToAll(){ LAYERS.forEach(e=>{ e.paletteName=activePaletteName; e.override=null; applyPalette(e); }); refreshLayerCards(); }
+  function applyPaletteToAll(recalc=false){
+    LAYERS.forEach(e=>{ e.paletteName = activePaletteName; applyPalette(e, recalc); });
+    refreshLayerCards();
+  }
 
   function shuffleColors(entry){
-    const pal=PALETTES[entry.paletteName] || PALETTES[activePaletteName] || PALETTES["Default"];
-    const ranks=Array.from({length:20},(_,i)=>String(i+1));
-    const cols=ranks.map(r=>pal.colors[r]);
+    // lo shuffle rimescola i colori fra le posizioni 1..20 senza cambiare l'ordine dei gruppi
+    const pal = (PALETTES[entry.paletteName] || PALETTES[activePaletteName] || PALETTES["Default"]);
+    const ranks = Array.from({length:20},(_,i)=>String(i+1));
+    const cols = ranks.map(r=>pal.colors[r]);
     for(let i=cols.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [cols[i],cols[j]]=[cols[j],cols[i]]; }
-    entry.override={}; ranks.forEach((r,i)=> entry.override[r]=cols[i]);
-    applyPalette(entry); // re-render immediato
+    entry.override = {};
+    ranks.forEach((r,i)=> entry.override[r]=cols[i]);
+    applyPalette(entry, false); // re-render immediato, no recalc
   }
 
   async function addFromURL(url, niceName){
@@ -265,11 +369,11 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"],
       const blobUrl=URL.createObjectURL(blob);
       const layer=new GeoJSONLayer({ url: blobUrl, title: niceName || (url.split("/").pop()||"GeoJSON") });
       map.add(layer);
-      const entry={ layer, title:layer.title, groupField:null, paletteName:activePaletteName, override:null, opacity:0.7 };
+      const entry={ layer, title:layer.title, groupField:null, paletteName:activePaletteName, override:null, opacity:0.7, rankOrder:null };
       LAYERS.push(entry);
       layer.when(async()=>{
         entry.groupField=await detectGroupField(layer);
-        applyPalette(entry);
+        await applyPalette(entry, true); // primo render: calcolo ranking area+freq
         refreshLayerCards();
         try{ const ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch{}
         log(`Caricato: ${url}`,"ok");
@@ -284,20 +388,20 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"],
       card.innerHTML=`
         <h4>${entry.title}</h4>
         <div class="row">
-          <label class="muted" style="width:110px">Campo gruppo</label>
+          <label class="muted" style="width:120px">Campo gruppo</label>
           <input id="gf-${idx}" class="grow" type="text" value="${entry.groupField??''}" placeholder="es. group_20">
         </div>
         <div class="row">
-          <label class="muted" style="width:110px">Palette</label>
+          <label class="muted" style="width:120px">Palette</label>
           <select id="pal-${idx}" class="grow"></select>
         </div>
         <div class="row">
-          <label class="muted" style="width:110px">Opacità</label>
+          <label class="muted" style="width:120px">Opacità</label>
           <input id="op-${idx}" type="range" min="0" max="1" step="0.05" value="${entry.opacity??0.7}">
         </div>
         <div class="row">
           <button id="btnShuffle-${idx}">🎲 Shuffle</button>
-          <button id="btnApply-${idx}">Applica</button>
+          <button id="btnApply-${idx}" title="Reimposta secondo frequenza+area">Applica</button>
           <button id="btnRemove-${idx}">Rimuovi</button>
         </div>`;
       wrap.appendChild(card);
@@ -314,14 +418,14 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"],
         entry.groupField = e.target.value.trim();
       });
       sel.addEventListener("change", e=>{
-        entry.paletteName = e.target.value; entry.override=null; applyPalette(entry);
+        entry.paletteName = e.target.value; entry.override=null; applyPalette(entry, false);
       });
       card.querySelector(`#op-${idx}`).addEventListener("input", e=>{
         entry.opacity = Number(e.target.value);
         entry.layer.opacity = entry.opacity;
       });
       card.querySelector(`#btnShuffle-${idx}`).onclick = ()=> shuffleColors(entry);
-      card.querySelector(`#btnApply-${idx}`).onclick   = ()=> applyPalette(entry);
+      card.querySelector(`#btnApply-${idx}`).onclick   = ()=> applyPalette(entry, true);  // ← ricalcolo ranking area+freq
       card.querySelector(`#btnRemove-${idx}`).onclick  = ()=>{
         map.remove(entry.layer);
         LAYERS.splice(idx,1);
@@ -332,8 +436,8 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"],
 
   // --- UI DATI ---
   const RAW_DEFAULT = "https://raw.githubusercontent.com/paguaro/Corine-/main/CLC2012_Export_FeaturesToJSO.geojson";
-  document.getElementById("btnLoadDefault").onclick = ()=> addFromURL(RAW_DEFAULT,"Corine (default)");
-  document.getElementById("btnAddUrl").onclick = ()=>{
+  document.getElementById("btnLoadDefault").onclick=()=> addFromURL(RAW_DEFAULT,"Corine (default)");
+  document.getElementById("btnAddUrl").onclick=()=>{
     const u=(document.getElementById("urlInput").value||"").trim();
     if(u) addFromURL(u);
   };
@@ -345,11 +449,11 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"],
         const url=URL.createObjectURL(new Blob([JSON.stringify(obj)],{type:"application/json"}));
         const layer=new GeoJSONLayer({ url, title:f.name });
         map.add(layer);
-        const entry={ layer, title:f.name, groupField:null, paletteName:activePaletteName, override:null, opacity:0.7 };
+        const entry={ layer, title:f.name, groupField:null, paletteName:activePaletteName, override:null, opacity:0.7, rankOrder:null };
         LAYERS.push(entry);
         layer.when(async()=>{
           entry.groupField=await detectGroupField(layer);
-          applyPalette(entry);
+          await applyPalette(entry, true);
           refreshLayerCards();
           try{ const ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch{}
           log(`Caricato file: ${f.name}`,"ok");
