@@ -206,7 +206,7 @@ require([
   }
 
   // --- LAYERS & RENDERING ---
-  // entry: { layer, title, groupField, paletteName, override:Object, opacity:number, rankByGroup:Map }
+  // entry: { layer, title, groupField, paletteName, override:Object, opacity:number, rankOrder:Array }
   const LAYERS=[];
 
   function isGeoJSON(o){ return o && ((o.type==="FeatureCollection"&&Array.isArray(o.features))||(o.type==="Feature"&&o.geometry)); }
@@ -225,83 +225,84 @@ require([
     return null;
   }
 
-  // Calcola ranking per "frequenza + area"
+  // Calcola ranking per "frequenza + area" usando OGGETTI (niente Map)
   async function computeRankAreaFreq(entry){
     const layer = entry.layer;
     const gf = entry.groupField;
     if(!gf) return null;
+
     const q = layer.createQuery();
     q.returnGeometry = true;
     q.outFields = [gf];
     q.where = "1=1";
     q.outSpatialReference = { wkid: 4326 };
+
     const res = await layer.queryFeatures(q);
-    const areaBy = new Map();
-    const countBy = new Map();
+
+    const areaBy = Object.create(null);
+    const countBy = Object.create(null);
 
     for(const f of res.features){
-      const gid = f.attributes[gf];
-      const geom = f.geometry;
+      const gid = String(f.attributes[gf]);
       let a = 0;
       try{
-        a = Math.abs(geometryEngine.geodesicArea(geom,"square-meters")) || 0;
-      }catch{ a = 0; }
-      areaBy.set(gid, (areaBy.get(gid)||0) + a);
-      countBy.set(gid, (countBy.get(gid)||0) + 1);
+        a = Math.abs(geometryEngine.geodesicArea(f.geometry,"square-meters")) || 0;
+        if(!isFinite(a) || a < 0) a = 0;
+      }catch{
+        a = 0;
+      }
+      areaBy[gid]  = (areaBy[gid]  || 0) + a;
+      countBy[gid] = (countBy[gid] || 0) + 1;
     }
 
-    const gids = Array.from(areaBy.keys());
-    const areas = gids.map(g=>areaBy.get(g));
-    const counts = gids.map(g=>countBy.get(g));
-    const aMax = Math.max(1, ...areas);
-    const cMax = Math.max(1, ...counts);
+    const gids = Object.keys(areaBy);
+    if(!gids.length) return { ranks:null, order:null };
+
+    const aMax = Math.max(1, ...gids.map(g=>areaBy[g]||0));
+    const cMax = Math.max(1, ...gids.map(g=>countBy[g]||0));
 
     // score = area_norm + count_norm
-    const score = new Map();
-    gids.forEach(g=>{
-      const s = (areaBy.get(g)/aMax) + (countBy.get(g)/cMax);
-      score.set(g, s);
-    });
+    const scored = gids.map(g => [g, (areaBy[g]/aMax) + (countBy[g]/cMax)]);
+    scored.sort((a,b)=> b[1]-a[1]);
 
-    // ordina desc per score
-    const sorted = Array.from(score.entries()).sort((a,b)=> b[1]-a[1]).map(([g])=>g);
-    // mappa gid -> rank (1..n), dove rank più alto = ultimo; useremo poi colori 20..1
-    const ranks = new Map();
-    sorted.forEach((g, i)=> ranks.set(g, i+1)); // 1 = più alto
-    return { ranks, order: sorted };
+    const order = scored.map(([g])=>g); // gid in ordine discendente
+    return { ranks:null, order };
   }
 
   // override è oggetto {"1":"#hex",...}
   function getOverrideColor(override, rank){ return override ? (override[rank]||override[String(rank)]||null) : null; }
 
-  function buildRenderer(field, palette, override, rankOrder){
-    // rankOrder: array di gid ordinati per score (desc). se presente, assegno i 20 colori in quell'ordine.
+  function toSameTypeValue(sampleFieldValue, gidStr){
+    const n = Number(gidStr);
+    return (typeof sampleFieldValue === "number" && !Number.isNaN(n)) ? n : gidStr;
+  }
+
+  function buildRenderer(field, palette, override, rankOrder, sampleFieldValue){
     const uvInfos = [];
     if (Array.isArray(rankOrder) && rankOrder.length){
-      // assegna colori 20..1 ai gruppi nell'ordine
-      const paletteKeys = Array.from({length:20},(_,i)=>String(i+1)); // "1".. "20"
-      const colorOrder = paletteKeys.map(k=>palette.colors[k]);
-      // vogliamo che il più "grande" prenda il colore 20:
-      const ascColors = colorOrder;           // [1..20]
+      // palette 20..1 (più grande = colore 20)
+      const paletteKeys = Array.from({length:20},(_,i)=>String(i+1));
+      const ascColors = paletteKeys.map(k=>palette.colors[k]);
       const descColors = ascColors.slice().reverse(); // [20..1]
+
       rankOrder.forEach((gid, idx)=>{
-        // se più di 20 classi, dopo la 20 usiamo default gray
+        const valueForField = toSameTypeValue(sampleFieldValue, gid);
         const hex = idx < 20
-          ? (getOverrideColor(override, String(20-idx)) || descColors[idx]) // se override presente rispetta la posizione
+          ? (getOverrideColor(override, String(20-idx)) || descColors[idx])
           : "#cccccc";
         uvInfos.push({
-          value: gid,
+          value: valueForField,
           symbol: { type:"simple-fill", color: hex, outline:{ color:[0,0,0,0], width:0 } },
           label: `Gruppo ${gid}`
         });
       });
     }else{
-      // fallback: mappa 1..20 direttamente
+      // fallback: mappa rank 1..20 direttamente (per campi già 1..20)
       for(let i=1;i<=20;i++){
         const rank=String(i);
         const hex = getOverrideColor(override,rank) || palette.colors[rank] || "#cccccc";
         uvInfos.push({
-          value: rank,
+          value: Number.isNaN(Number(rank)) ? rank : Number(rank),
           symbol: { type:"simple-fill", color: hex, outline:{ color:[0,0,0,0], width:0 } },
           label: `Classe ${rank}`
         });
@@ -316,6 +317,14 @@ require([
     };
   }
 
+  async function sampleFieldValue(layer, field){
+    try{
+      const q=layer.createQuery(); q.outFields=[field]; q.returnGeometry=false; q.num=1;
+      const r=await layer.queryFeatures(q);
+      return r.features[0]?.attributes?.[field];
+    }catch{ return null; }
+  }
+
   async function applyPalette(entry, recalc=false){
     // scegli una palette valida in ogni caso
     const pal =
@@ -326,20 +335,21 @@ require([
 
     if(!entry.groupField){ log(`${entry.title}: imposta il campo gruppo nella card`,"err"); return; }
 
-    // Se recalc (o non abbiamo ancora ranking), calcola ranking area+freq
+    // Se richiesto (o non abbiamo ancora ranking), calcola ranking area+freq
     if(recalc || !entry.rankOrder){
       try{
         const res = await computeRankAreaFreq(entry);
-        entry.rankOrder = res?.order || null; // array di gid ordinati per score
+        entry.rankOrder = res?.order || null;
       }catch(e){
         log(`Ranking area+freq fallito: ${e.message}`,"err");
         entry.rankOrder = null;
       }
-      // quando ricalcolo, cancello eventuale shuffle
+      // quando ricalcolo, azzero eventuale shuffle
       entry.override = null;
     }
 
-    entry.layer.renderer = buildRenderer(entry.groupField, pal, entry.override, entry.rankOrder);
+    const sampleVal = await sampleFieldValue(entry.layer, entry.groupField);
+    entry.layer.renderer = buildRenderer(entry.groupField, pal, entry.override, entry.rankOrder, sampleVal);
     entry.layer.opacity = entry.opacity ?? 0.7;
   }
 
@@ -349,7 +359,7 @@ require([
   }
 
   function shuffleColors(entry){
-    // lo shuffle rimescola i colori fra le posizioni 1..20 senza cambiare l'ordine dei gruppi
+    // rimescola i colori 1..20 senza cambiare l’ordine dei gruppi
     const pal = (PALETTES[entry.paletteName] || PALETTES[activePaletteName] || PALETTES["Default"]);
     const ranks = Array.from({length:20},(_,i)=>String(i+1));
     const cols = ranks.map(r=>pal.colors[r]);
@@ -425,7 +435,7 @@ require([
         entry.layer.opacity = entry.opacity;
       });
       card.querySelector(`#btnShuffle-${idx}`).onclick = ()=> shuffleColors(entry);
-      card.querySelector(`#btnApply-${idx}`).onclick   = ()=> applyPalette(entry, true);  // ← ricalcolo ranking area+freq
+      card.querySelector(`#btnApply-${idx}`).onclick   = ()=> applyPalette(entry, true);  // ricalcolo ranking area+freq
       card.querySelector(`#btnRemove-${idx}`).onclick  = ()=>{
         map.remove(entry.layer);
         LAYERS.splice(idx,1);
