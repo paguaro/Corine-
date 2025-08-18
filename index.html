@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
 <script src="https://js.arcgis.com/4.33/"></script>
 
-<!-- TopoJSON come ES Module (evita multipleDefine) -->
+<!-- TopoJSON come ES Module (evita multipleDefine con Dojo) -->
 <script type="module">
   import * as topojson from "https://cdn.jsdelivr.net/npm/topojson-client@3/+esm";
   window.topojsonClient = topojson;
@@ -21,7 +21,7 @@
 
   /* pannello layer (raccoglibile) */
   #panel{position:absolute;top:10px;left:10px;z-index:20;background:#fff;padding:12px;border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.2);font-size:14px;max-width:520px;max-height:92%;overflow:auto}
+    box-shadow:0 6px 18px rgba(0,0,0,.2);font-size:14px;max-width:540px;max-height:92%;overflow:auto}
   #panel.collapsed{display:none}
   #panelToggle{position:absolute;top:10px;left:10px;z-index:21;border:none;border-radius:10px;background:#fff;
     box-shadow:0 6px 18px rgba(0,0,0,.2);width:40px;height:40px;cursor:pointer;font-size:18px}
@@ -36,39 +36,41 @@
   .card{border:1px solid #e5e7eb;border-radius:10px;background:#fafafa;padding:10px;margin-top:10px}
   .card h4{margin:.2rem 0 .6rem 0;font-size:14px}
 
-  /* lista file server (senza estensione) */
-  #serverWrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
-  .srv-item{border:1px solid #e5e7eb;border-radius:10px;padding:8px;background:#fff;display:flex;flex-direction:column;gap:6px}
-  .srv-name{font-weight:600}
+  /* lista file server */
+  #serverWrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+  .srv-item{border:1px solid #e5e7eb;border-radius:10px;padding:8px;background:#fff;display:flex;align-items:center;gap:8px}
+  .srv-name{font-weight:600;flex:1}
 
   /* palette gallery (raccoglibile) */
   #palToggle{position:absolute;left:60px;top:10px;z-index:21;border:none;border-radius:10px;background:#fff;
     box-shadow:0 6px 18px rgba(0,0,0,.2);height:40px;padding:0 10px;cursor:pointer}
   #palPanel{position:absolute;left:60px;top:60px;z-index:20;display:none;background:#fff;border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.25);padding:12px;max-height:65%;overflow:auto;min-width:380px}
+    box-shadow:0 6px 18px rgba(0,0,0,.25);padding:12px;max-height:65%;overflow:auto;min-width:420px}
+  .pal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
   .pal-item{border:1px solid #eee;border-radius:10px;padding:8px;margin-bottom:8px;cursor:pointer}
   .pal-title{font-weight:600;margin-bottom:6px}
   .sw-row{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
   .sw{height:14px;border-radius:3px;border:1px solid #ddd}
 
-  /* azioni mappa */
-  #mapActions{position:absolute;top:10px;right:10px;z-index:22;display:flex;gap:8px}
-  #mapActions button{border:none;border-radius:10px;background:#fff;padding:8px 12px;box-shadow:0 6px 18px rgba(0,0,0,.25);cursor:pointer}
+  /* export PNG (in basso a destra) */
+  #btnExport{position:absolute;right:15px;bottom:15px;z-index:26;border:none;border-radius:999px;padding:10px 14px;
+    background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}
 
-  /* basemap picker (raccoglibile) */
-  #bm-toggle{position:absolute;right:15px;bottom:15px;z-index:25;width:42px;height:42px;border-radius:999px;border:none;
+  /* basemap picker */
+  #bm-toggle{position:absolute;right:70px;bottom:15px;z-index:25;width:42px;height:42px;border-radius:999px;border:none;
     background:#ffffff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px}
-  #bm-panel{position:absolute;right:15px;bottom:70px;z-index:24;display:none;background:#fff;border-radius:12px;
+  #bm-panel{position:absolute;right:70px;bottom:70px;z-index:24;display:none;background:#fff;border-radius:12px;
     box-shadow:0 6px 18px rgba(0,0,0,.25);padding:10px;min-width:220px}
   #bm-panel label{display:block;font-size:12px;color:#555;margin-bottom:4px}
-
-  /* 3D toggle in basso a destra (non copre zoom) */
-  #view3d{position:absolute;right:70px;bottom:15px;z-index:25;border:none;border-radius:999px;padding:10px 14px;
-    background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}
 
   /* shuffle globale */
   #btnShuffleGlobal{position:absolute;left:15px;bottom:15px;z-index:26;border:none;border-radius:999px;padding:10px 14px;
     background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}
+
+  /* toast click info */
+  #toast{position:absolute;bottom:65px;left:15px;z-index:30;background:#111;color:#fff;border-radius:10px;padding:10px 12px;
+    box-shadow:0 6px 18px rgba(0,0,0,.4);display:none;max-width:80%}
+  #toast button{margin-left:8px;border:none;border-radius:8px;padding:4px 8px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -78,13 +80,7 @@
 <button id="panelToggle" title="Mostra/Nascondi pannello">☰</button>
 <button id="palToggle" title="Palette">🎨 Palette</button>
 
-<!-- azioni mappa -->
-<div id="mapActions">
-  <button id="btnExport" title="Esporta PNG mappa">Export PNG</button>
-</div>
-
-<!-- basemap picker -->
-<button id="view3d" title="Passa a 3D">3D</button>
+<!-- basemap & export -->
 <button id="bm-toggle" title="Basemap">🗺️</button>
 <div id="bm-panel">
   <label>Mappa di base</label>
@@ -100,9 +96,10 @@
     <option value="osm-standard">OSM Standard</option>
   </select>
 </div>
+<button id="btnExport" title="Esporta PNG mappa">Export PNG</button>
 
 <!-- shuffle globale -->
-<button id="btnShuffleGlobal" title="Rimescola colori di tutti i layer">🎲 Shuffle</button>
+<button id="btnShuffleGlobal" title="Rimescola colori di tutti i layer visibili">🎲 Shuffle</button>
 
 <!-- pannello layer -->
 <div id="panel">
@@ -114,9 +111,8 @@
     <button id="btnApplyGlobalField">Applica ai layer visibili</button>
   </div>
   <div class="row">
-    <label class="muted">Estrudi (3D)</label>
-    <input type="checkbox" id="chkExtrude">
-    <span class="muted">Attivo solo in SceneView</span>
+    <button id="btnApplyActivePalette">Applica palette attiva ai layer visibili</button>
+    <span id="activePalTag" class="muted"></span>
   </div>
 
   <hr>
@@ -145,13 +141,11 @@
 <div id="palPanel"></div>
 
 <!-- toast -->
-<div id="toast" style="position:absolute;bottom:15px;left:15px;z-index:30;background:#111;color:#fff;border-radius:10px;padding:10px 12px;box-shadow:0 6px 18px rgba(0,0,0,.4);display:none;max-width:80%">
-  <span id="toastText"></span><button id="btnCopy" style="margin-left:8px;border:none;border-radius:8px;padding:4px 8px;cursor:pointer">Copia</button>
-</div>
+<div id="toast"><span id="toastText"></span><button id="btnCopy">Copia</button></div>
 
 <script>
 /* ==========================
-   1) LAYER presenti sul server
+   LAYER presenti sul server
    (solo NOME base, senza .topojson)
    ========================== */
 const SERVER_LAYERS = [
@@ -161,22 +155,22 @@ const SERVER_LAYERS = [
 ];
 
 /* ==========================
-   2) VARIABILI APP
+   VARIABILI APP
    ========================== */
 let PALETTES = {};              // nome -> {name, colors:{1..20:"#hex"}}
-let ACTIVE_PALETTE_NAMES = [];  // lista nomi ordinata
-let activeLayerIndex = null;    // layer attivo per applicazione palette
+let ACTIVE_PALETTE_NAMES = [];  // ordine nomi
+let activePaletteName = null;   // palette attiva (scelta dalla gallery)
+let activeLayerIndex = null;    // opzionale, non più necessario per applicare a tutti
 const LAYERS = [];              // [{layer,title,groupField,opacity,override,basePalette,visible}]
-let is3D = false;
-let extrudeOn = false;
+let map, view;
 
 /* ==========================
-   3) MAPPA
+   MAPPA 2D
    ========================== */
-require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/GeoJSONLayer"], (EsriMap,MapView,SceneView,GeoJSONLayer)=>{
+require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,MapView,GeoJSONLayer)=>{
 
-  const map = new EsriMap({ basemap:"gray-vector", ground:"world-elevation" });
-  let view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:7 });
+  map = new EsriMap({ basemap:"gray-vector" });
+  view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:7 });
   view.ui.move("zoom","top-right");
 
   // pannelli
@@ -192,24 +186,6 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
   const selBM = document.getElementById("bm-select");
   btnBM.onclick = ()=> pnlBM.style.display = (pnlBM.style.display==="none" || !pnlBM.style.display) ? "block" : "none";
   selBM.onchange = ()=>{ map.basemap = selBM.value; };
-
-  // 3D toggle in basso a destra
-  document.getElementById("view3d").onclick = async ()=>{
-    const state = { center: view.center.clone(), zoom: view.zoom };
-    await view.when(); view.destroy();
-    is3D = !is3D;
-    if(is3D){
-      view = new SceneView({ container:"viewDiv", map, camera:{ position:[-8,39.5, 150000], tilt:60 }, qualityProfile:"high" });
-      document.getElementById("view3d").textContent="2D"; document.getElementById("view3d").title="Passa a 2D";
-    }else{
-      view = new MapView({ container:"viewDiv", map, center: state.center, zoom: state.zoom });
-      view.ui.move("zoom","top-right");
-      document.getElementById("view3d").textContent="3D"; document.getElementById("view3d").title="Passa a 3D";
-    }
-    bindViewClick();
-    // aggiorna renderer per l'estrusione on/off
-    LAYERS.forEach(e => applyPalette(e));
-  };
 
   // export PNG
   document.getElementById("btnExport").onclick = async ()=>{
@@ -229,35 +205,27 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
     try{ await navigator.clipboard.writeText(toastText.textContent||""); toast.style.display="none"; log("Copiato negli appunti","ok"); }
     catch(e){ log("Copy fallita","err"); }
   };
-
-  function bindViewClick(){
-    view.on("click", async (event)=>{
-      try{
-        const hit = await view.hitTest(event);
-        const g = hit.results?.find(r=>r.graphic?.layer?.type==="geojson");
-        if(!g){ toast.style.display="none"; return; }
-        const entry = LAYERS.find(x=>x.layer===g.graphic.layer);
-        if(!entry){ toast.style.display="none"; return; }
-        const attrs = g.graphic.attributes || {};
-        const field = entry.groupField;
-        const val = attrs[field];
-        const rend = entry.layer.renderer;
-        let hex = "#000000";
-        if(rend?.uniqueValueInfos){
-          const it = rend.uniqueValueInfos.find(u=>String(u.value)==String(val));
-          if(is3D){
-            const sl = it?.symbol?.symbolLayers?.[0];
-            if(sl?.material?.color) hex = Array.isArray(sl.material.color) ? rgbaToHex(sl.material.color) : sl.material.color;
-          }else{
-            if(it?.symbol?.color) hex = Array.isArray(it.symbol.color) ? rgbaToHex(it.symbol.color) : it.symbol.color;
-          }
-        }
-        toastText.textContent = `layer: ${entry.title} | ${field}=${val} | color=${hex}`;
-        toast.style.display = "inline-flex";
-      }catch{}
-    });
-  }
-  bindViewClick();
+  view.on("click", async (event)=>{
+    try{
+      const hit = await view.hitTest(event);
+      const g = hit.results?.find(r=>r.graphic?.layer?.type==="geojson");
+      if(!g){ toast.style.display="none"; return; }
+      const entry = LAYERS.find(x=>x.layer===g.graphic.layer);
+      if(!entry){ toast.style.display="none"; return; }
+      const attrs = g.graphic.attributes || {};
+      const field = entry.groupField;
+      const val = attrs[field];
+      const rend = entry.layer.renderer;
+      let hex = "#000000";
+      if(rend?.uniqueValueInfos){
+        const it = rend.uniqueValueInfos.find(u=>String(u.value)==String(val));
+        if(it?.symbol?.color) hex = Array.isArray(it.symbol.color) ? rgbaToHex(it.symbol.color) : it.symbol.color;
+      }
+      toastText.textContent = `layer: ${entry.title} | ${field}=${val} | color=${hex}`;
+      toast.style.display = "inline-flex";
+    }catch{}
+  });
+  function rgbaToHex(c){ const r=c[0]??0,g=c[1]??0,b=c[2]??0; return "#"+[r,g,b].map(x=>x.toString(16).padStart(2,"0")).join(""); }
 
   // LOG
   const log = (msg,cls="")=>{
@@ -266,9 +234,8 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
     el.textContent=msg; div.appendChild(el); div.scrollTop=div.scrollHeight;
     console[cls==="err"?"error":cls==="ok"?"log":"log"](msg);
   };
-  function rgbaToHex(c){ const r=c[0]??0,g=c[1]??0,b=c[2]??0; return "#"+[r,g,b].map(x=>x.toString(16).padStart(2,"0")).join(""); }
 
-  // PALETTE — carica da palettes_from_twb.json
+  // ====== PALETTE ======
   async function loadPalettes(){
     try{
       const r = await fetch("./palettes_from_twb.json",{cache:"no-store"});
@@ -286,19 +253,27 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
         Object.entries(raw||{}).forEach(([name,p])=> add(name, p?.colors||{}));
       }
       PALETTES = out; ACTIVE_PALETTE_NAMES = Object.keys(out);
+      activePaletteName = ACTIVE_PALETTE_NAMES[0] || null;
       buildPaletteGallery();
+      updateActivePalTag();
       log(`Palette caricate: ${ACTIVE_PALETTE_NAMES.length}`,"ok");
     }catch(e){
       log("Impossibile caricare palettes_from_twb.json (nessuna palette disponibile)","err");
     }
   }
-
   function buildPaletteGallery(){
     const panel = document.getElementById("palPanel");
-    panel.innerHTML = "<h4 style='margin:0 0 8px 0'>Palette disponibili</h4>";
+    panel.innerHTML = "";
+    const head = document.createElement("div");
+    head.className="pal-head";
+    head.innerHTML = `<h4 style="margin:0">Palette disponibili</h4>
+      <button id="btnApplyActiveFromGallery">Applica palette attiva ai layer visibili</button>`;
+    panel.appendChild(head);
+    document.getElementById("btnApplyActiveFromGallery").onclick = applyActivePaletteToVisible;
+
     ACTIVE_PALETTE_NAMES.forEach(name=>{
       const p = PALETTES[name];
-      const div=document.createElement("div"); div.className="pal-item"; div.title=`Applica "${name}" al layer attivo`;
+      const div=document.createElement("div"); div.className="pal-item"; div.title=`Imposta e applica "${name}"`;
       const title=document.createElement("div"); title.className="pal-title"; title.textContent=name;
       const sw1=document.createElement("div"); sw1.className="sw-row";
       const sw2=document.createElement("div"); sw2.className="sw-row";
@@ -306,19 +281,18 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
       for(let i=11;i<=20;i++){ const c=document.createElement("div"); c.className="sw"; c.style.background=p.colors[String(i)]; sw2.appendChild(c); }
       div.appendChild(title); div.appendChild(sw1); div.appendChild(sw2);
       div.onclick = ()=>{
-        if(activeLayerIndex==null){ log("Seleziona prima un layer (radio) nella lista 'Layer caricati'","err"); return; }
-        const entry = LAYERS[activeLayerIndex];
-        if(!entry) return;
-        entry.basePalette = p;   // set palette “di base”
-        entry.override = null;   // pulisci shuffle
-        applyPalette(entry);
-        refreshLayerCards();
+        activePaletteName = name;
+        updateActivePalTag();
+        applyActivePaletteToVisible(); // applica SUBITO a tutti i layer visibili
       };
       panel.appendChild(div);
     });
   }
+  function updateActivePalTag(){
+    document.getElementById("activePalTag").textContent = activePaletteName ? `Palette attiva: ${activePaletteName}` : "(nessuna palette attiva)";
+  }
 
-  // RENDERER
+  // ====== RENDERER & APPLICAZIONE ======
   function buildRenderer(field, palette, override){
     const infos=[];
     for(let i=1;i<=20;i++){
@@ -326,34 +300,28 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
       const hex=(override && (override[rank])) || palette.colors[rank];
       infos.push({
         value: Number(rank),
-        symbol: is3D ? {
-          type:"polygon-3d",
-          symbolLayers:[{type:"fill", material:{color:hex}, outline:{color:[0,0,0,0]}, height: extrudeOn ? (i*150) : 0 }]
-        } : {
-          type:"simple-fill", color: hex, outline:{ color:[0,0,0,0], width:0 }
-        },
+        symbol: { type:"simple-fill", color: hex, outline:{ color:[0,0,0,0], width:0 } },
         label:`Classe ${rank}`
       });
     }
     return {
       type:"unique-value",
       field,
-      defaultSymbol: is3D ? { type:"polygon-3d", symbolLayers:[{type:"fill", material:{color:[220,220,220,0]}}] }
-                          : { type:"simple-fill", color:[220,220,220,0], outline:{ color:[0,0,0,0], width:0 } },
+      defaultSymbol: { type:"simple-fill", color:[220,220,220,0], outline:{ color:[0,0,0,0], width:0 } },
       uniqueValueInfos: infos
     };
   }
   function applyPalette(entry){
     if(!entry.groupField){ log(`${entry.title}: imposta il campo legenda (es. group20 o group_nac)`,"err"); return; }
     if(!entry.basePalette){
-      if(!ACTIVE_PALETTE_NAMES.length){ log("Nessuna palette disponibile","err"); return; }
-      entry.basePalette = PALETTES[ACTIVE_PALETTE_NAMES[0]];
+      if(!activePaletteName){ log("Nessuna palette attiva: scegli dalla gallery","err"); return; }
+      entry.basePalette = PALETTES[activePaletteName];
     }
     entry.layer.renderer = buildRenderer(entry.groupField, entry.basePalette, entry.override);
     entry.layer.opacity = entry.opacity ?? 1;
   }
   function shuffleColors(entry){
-    if(!entry.basePalette){ log("Imposta prima una palette al layer","err"); return; }
+    if(!entry.basePalette){ log(`Imposta una palette per ${entry.title}`,"err"); return; }
     const ranks=[...Array(20)].map((_,i)=>String(i+1));
     const cols=ranks.map(r=>entry.basePalette.colors[r]);
     for(let i=cols.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [cols[i],cols[j]]=[cols[j],cols[i]]; }
@@ -362,12 +330,27 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
     updateCardSwatches(entry);
   }
   function resetLayer(entry){
+    // Reimposta la palette attiva e pulisce lo shuffle
+    if(activePaletteName){
+      entry.basePalette = PALETTES[activePaletteName];
+    }
     entry.override = null;
     applyPalette(entry);
     updateCardSwatches(entry);
   }
+  function applyActivePaletteToVisible(){
+    if(!activePaletteName){ log("Seleziona prima una palette nella gallery","err"); return; }
+    const p = PALETTES[activePaletteName];
+    LAYERS.filter(e=>e.visible).forEach(e=>{
+      e.basePalette = p;
+      e.override = null;
+      applyPalette(e);
+      updateCardSwatches(e);
+    });
+    refreshLayerCards();
+  }
 
-  // CARICAMENTO: TopoJSON / GeoJSON
+  // ====== CARICAMENTO: TopoJSON / GeoJSON ======
   async function addFromGeoJSONObject(obj, titleBase){
     const blob=new Blob([JSON.stringify(obj)],{type:"application/json"});
     const blobUrl=URL.createObjectURL(blob);
@@ -377,6 +360,8 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
     LAYERS.push(entry);
     layer.when(async()=>{
       entry.groupField = await detectGroupField(layer);
+      // assegna subito palette attiva (se esiste) e applica
+      if(activePaletteName) entry.basePalette = PALETTES[activePaletteName];
       applyPalette(entry);
       refreshLayerCards();
       try{ const ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch{}
@@ -418,71 +403,97 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
     return null;
   }
 
-  // UI — Server list
+  // ====== UI — Server list ======
   const serverWrap = document.getElementById("serverWrap");
+  // mapping nome -> entry per gestire toggle visibilità da checkbox server
+  const nameToEntry = new Map();
+
   function initServerList(){
     serverWrap.innerHTML="";
     SERVER_LAYERS.forEach(name=>{
-      const it=document.createElement("div"); it.className="srv-item";
-      const lbl=document.createElement("div"); lbl.className="srv-name"; lbl.textContent=name.replace(/_/g," ");
-      const row=document.createElement("div"); row.style.display="flex"; row.style.alignItems="center"; row.style.gap="8px";
+      const item=document.createElement("div"); item.className="srv-item";
       const cb=document.createElement("input"); cb.type="checkbox"; cb.value=name;
-      const btn=document.createElement("button"); btn.textContent="Carica"; btn.onclick=()=> addFromURL(name);
-      row.appendChild(cb); row.appendChild(btn);
-      it.appendChild(lbl); it.appendChild(row);
-      serverWrap.appendChild(it);
+      const lbl=document.createElement("div"); lbl.className="srv-name"; lbl.textContent=name.replace(/_/g," ");
+      item.appendChild(cb); item.appendChild(lbl);
+      serverWrap.appendChild(item);
+
+      cb.onchange = async ()=>{
+        const entry = nameToEntry.get(name);
+        if(cb.checked){
+          if(entry){ entry.visible = true; entry.layer.visible = true; refreshLayerCards(); }
+          else      await addFromURL(name).then(()=> nameToEntry.set(name, LAYERS[LAYERS.length-1]));
+        }else{
+          if(entry){ entry.visible = false; entry.layer.visible = false; refreshLayerCards(); }
+        }
+      };
     });
-    document.getElementById("btnLoadSelected").onclick = ()=>{
-      const picks=[...serverWrap.querySelectorAll('input[type="checkbox"]:checked')].map(x=>x.value);
-      (picks.length? picks : SERVER_LAYERS).forEach(addFromURL);
+
+    document.getElementById("btnLoadSelected").onclick = async ()=>{
+      const checks=[...serverWrap.querySelectorAll('input[type="checkbox"]')];
+      const picked=checks.filter(x=>x.checked).map(x=>x.value);
+      if(!picked.length){
+        log("Nessun layer selezionato: attivo e carico tutti","ok");
+        await loadAllServerLayers(checks);
+      }else{
+        for(const n of picked){
+          const cb = checks.find(x=>x.value===n); if(cb) cb.checked = true;
+          const entry = nameToEntry.get(n);
+          if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
+          else      await addFromURL(n).then(()=> nameToEntry.set(n, LAYERS[LAYERS.length-1]));
+        }
+      }
     };
-    document.getElementById("btnLoadAll").onclick = ()=> SERVER_LAYERS.forEach(addFromURL);
+
+    document.getElementById("btnLoadAll").onclick = async ()=>{
+      const checks=[...serverWrap.querySelectorAll('input[type="checkbox"]')];
+      await loadAllServerLayers(checks);
+    };
   }
 
-  // UI — File locali
+  async function loadAllServerLayers(checks){
+    for(const cb of checks){ cb.checked = true; }
+    for(const n of SERVER_LAYERS){
+      const entry = nameToEntry.get(n);
+      if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
+      else      await addFromURL(n).then(()=> nameToEntry.set(n, LAYERS[LAYERS.length-1]));
+    }
+  }
+
+  // ====== UI — File locali ======
   document.getElementById("fileInput").addEventListener("change", async ev=>{
     for(const f of ev.target.files){
       try{
         const txt=await f.text(); const obj=JSON.parse(txt);
+        const base = f.name.replace(/\.[^.]+$/,"");
         if(obj.type==="Topology"){
           const names=Object.keys(obj.objects||{}); if(!names.length){ log(`TopoJSON senza objects: ${f.name}`,"err"); continue; }
           let pick = names[0], maxn=0;
           for(const n of names){ const g=obj.objects[n]; const cnt=(g?.geometries||[]).length; if(cnt>maxn){maxn=cnt; pick=n;} }
           const geo = window.topojsonClient.feature(obj, obj.objects[pick]);
-          await addFromGeoJSONObject(geo, f.name.replace(/\.[^.]+$/,""));
+          await addFromGeoJSONObject(geo, base);
         }else{
           const isGeo = obj && ((obj.type==="FeatureCollection"&&Array.isArray(obj.features))||(obj.type==="Feature"&&obj.geometry));
           if(!isGeo){ log(`"${f.name}" non è GeoJSON/TopoJSON valido`,"err"); continue; }
-          await addFromGeoJSONObject(obj, f.name.replace(/\.[^.]+$/,""));
+          await addFromGeoJSONObject(obj, base);
         }
       }catch(e){ log(`Errore file ${f.name}: ${e.message}`,"err"); }
     }
     ev.target.value="";
   });
 
-  // UI — Layer cards
+  // ====== UI — Layer cards ======
   const layersWrap = document.getElementById("layersWrap");
   function refreshLayerCards(){
     layersWrap.innerHTML="";
     LAYERS.forEach((entry,idx)=>{
       const card=document.createElement("div"); card.className="card";
-      const id = `layerRadio-${idx}`;
       card.innerHTML=`
-        <h4>
-          <label title="Rendi questo il layer attivo per la gallery palette">
-            <input type="radio" name="activeLayer" id="${id}" ${activeLayerIndex===idx?"checked":""}>
-            <span>${entry.title}</span>
-          </label>
-        </h4>
+        <h4>${entry.title}</h4>
         <div class="row">
           <label class="muted" style="width:90px">Visibile</label>
           <input type="checkbox" id="vis-${idx}" ${entry.visible?"checked":""}>
           <label class="muted" style="margin-left:12px;width:110px">Campo legenda</label>
           <input id="gf-${idx}" class="grow" type="text" value="${entry.groupField??''}" placeholder="group20 o group_nac">
-        </div>
-        <div class="row">
-          <label class="muted" style="width:90px">Palette</label>
-          <select id="pal-${idx}" class="grow"></select>
         </div>
         <div class="row">
           <label class="muted" style="width:90px">Trasparenza</label>
@@ -497,9 +508,6 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
       `;
       layersWrap.appendChild(card);
 
-      // radio attivo
-      card.querySelector(`#${id}`).onchange = ()=>{ activeLayerIndex = idx; };
-
       // visibilità
       const vis = card.querySelector(`#vis-${idx}`);
       vis.onchange = ()=>{ entry.visible = vis.checked; entry.layer.visible = entry.visible; };
@@ -507,22 +515,6 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
       // campo legenda
       const gf = card.querySelector(`#gf-${idx}`);
       gf.onchange = ()=>{ entry.groupField = gf.value.trim(); applyPalette(entry); updateCardSwatches(entry); };
-
-      // select palette
-      const sel = card.querySelector(`#pal-${idx}`);
-      sel.innerHTML = "";
-      ACTIVE_PALETTE_NAMES.forEach(name=>{
-        const opt=document.createElement("option"); opt.value=name; opt.textContent=name;
-        if(entry.basePalette && entry.basePalette.name===name) opt.selected=true;
-        sel.appendChild(opt);
-      });
-      sel.onchange = ()=>{
-        const p = PALETTES[sel.value];
-        entry.basePalette = p;
-        entry.override = null;
-        applyPalette(entry);
-        updateCardSwatches(entry);
-      };
 
       // trasparenza
       const op = card.querySelector(`#op-${idx}`);
@@ -535,7 +527,6 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
         map.remove(entry.layer);
         const k = LAYERS.indexOf(entry);
         if(k>=0) LAYERS.splice(k,1);
-        if(activeLayerIndex===k) activeLayerIndex=null;
         refreshLayerCards();
       };
 
@@ -547,8 +538,12 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
     const k = LAYERS.indexOf(entry);
     const el = document.getElementById(`paletteSw-${k}`);
     if(!el) return;
-    if(!entry.basePalette){ el.textContent="(nessuna palette assegnata)"; return; }
-    const pal = entry.override ? {colors:entry.override} : entry.basePalette;
+    if(!(entry.basePalette || activePaletteName)){
+      el.textContent="(nessuna palette assegnata)";
+      return;
+    }
+    const base = entry.basePalette || PALETTES[activePaletteName];
+    const pal = entry.override ? {colors:entry.override} : base;
     const wrap=document.createElement("span");
     for(let i=1;i<=20;i++){
       const hex = pal.colors[String(i)];
@@ -557,22 +552,23 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
       s.style.cssText=`display:inline-block;width:10px;height:10px;border:1px solid #ccc;margin-left:2px;background:${hex};vertical-align:middle;border-radius:2px`;
       wrap.appendChild(s);
     }
-    el.innerHTML = `Palette: <strong>${entry.basePalette.name}</strong> ${wrap.outerHTML}`;
+    el.innerHTML = `Palette: <strong>${(entry.basePalette||{name:activePaletteName}).name || activePaletteName}</strong> ${wrap.outerHTML}`;
   }
 
   // Shuffle globale
   document.getElementById("btnShuffleGlobal").onclick = ()=>{
-    if(!LAYERS.length){ log("Nessun layer caricato","err"); return; }
-    LAYERS.forEach(e=> shuffleColors(e));
+    const vis = LAYERS.filter(e=>e.visible);
+    if(!vis.length){ log("Nessun layer visibile","err"); return; }
+    vis.forEach(e=> shuffleColors(e));
     refreshLayerCards();
   };
 
   // Controllo globale campo legenda
   document.getElementById("btnApplyGlobalField").onclick = async ()=>{
     const sel = document.querySelector('input[name="globalField"]:checked')?.value || "group20";
-    if(!LAYERS.length){ log("Nessun layer caricato","err"); return; }
-    for(const e of LAYERS.filter(x=>x.visible)){
-      // prova ad usare il campo; se non esiste, log avviso
+    const vis = LAYERS.filter(x=>x.visible);
+    if(!vis.length){ log("Nessun layer visibile","err"); return; }
+    for(const e of vis){
       const ok = await fieldExists(e.layer, sel);
       if(ok){
         e.groupField = sel;
@@ -584,14 +580,8 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
     refreshLayerCards();
   };
 
-  // Toggle estrusione globale
-  document.getElementById("chkExtrude").onchange = (ev)=>{
-    extrudeOn = ev.target.checked;
-    if(!is3D && extrudeOn){
-      log("Estrusione attiva: passa a 3D per vederla","ok");
-    }
-    LAYERS.forEach(e=> applyPalette(e));
-  };
+  // Applica palette attiva ai visibili (dal pannello)
+  document.getElementById("btnApplyActivePalette").onclick = applyActivePaletteToVisible;
 
   async function fieldExists(layer, fname){
     try{
@@ -605,50 +595,61 @@ require(["esri/Map","esri/views/MapView","esri/views/SceneView","esri/layers/Geo
   }
 
   // Server list
+  initServerList();
+  // Palette
+  loadPalettes();
+
+  /* helper locali */
   function initServerList(){
-    const cont = document.getElementById("serverWrap");
-    cont.innerHTML = "";
+    serverWrap.innerHTML="";
     SERVER_LAYERS.forEach(name=>{
-      const item=document.createElement("div"); item.className="srv-item";
-      const lbl=document.createElement("div"); lbl.className="srv-name"; lbl.textContent=name.replace(/_/g," ");
-      const row=document.createElement("div"); row.style.display="flex"; row.style.alignItems="center"; row.style.gap="8px";
+      const it=document.createElement("div"); it.className="srv-item";
       const cb=document.createElement("input"); cb.type="checkbox"; cb.value=name;
-      const btn=document.createElement("button"); btn.textContent="Carica"; btn.onclick=()=> addFromURL(name);
-      row.appendChild(cb); row.appendChild(btn);
-      item.appendChild(lbl); item.appendChild(row);
-      cont.appendChild(item);
+      const lbl=document.createElement("div"); lbl.className="srv-name"; lbl.textContent=name.replace(/_/g," ");
+      it.appendChild(cb); it.appendChild(lbl);
+      serverWrap.appendChild(it);
+
+      cb.onchange = async ()=>{
+        const entry = LAYERS.find(e=>e.title===name);
+        if(cb.checked){
+          if(entry){ entry.visible = true; entry.layer.visible = true; refreshLayerCards(); }
+          else      await addFromURL(name);
+        }else{
+          if(entry){ entry.visible = false; entry.layer.visible = false; refreshLayerCards(); }
+        }
+      };
     });
-    document.getElementById("btnLoadSelected").onclick = ()=>{
-      const picks=[...cont.querySelectorAll('input[type="checkbox"]:checked')].map(x=>x.value);
-      (picks.length? picks : SERVER_LAYERS).forEach(addFromURL);
+
+    document.getElementById("btnLoadSelected").onclick = async ()=>{
+      const checks=[...serverWrap.querySelectorAll('input[type="checkbox"]')];
+      const picked=checks.filter(x=>x.checked).map(x=>x.value);
+      if(!picked.length){
+        log("Nessun layer selezionato: attivo e carico tutti","ok");
+        await loadAllServerLayers(checks);
+      }else{
+        for(const n of picked){
+          const cb = checks.find(x=>x.value===n); if(cb) cb.checked = true;
+          const entry = LAYERS.find(e=>e.title===n);
+          if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
+          else      await addFromURL(n);
+        }
+      }
     };
-    document.getElementById("btnLoadAll").onclick = ()=> SERVER_LAYERS.forEach(addFromURL);
+
+    document.getElementById("btnLoadAll").onclick = async ()=>{
+      const checks=[...serverWrap.querySelectorAll('input[type="checkbox"]')];
+      await loadAllServerLayers(checks);
+    };
   }
 
-  // File locali
-  document.getElementById("fileInput").addEventListener("change", async ev=>{
-    for(const f of ev.target.files){
-      try{
-        const txt=await f.text(); const obj=JSON.parse(txt);
-        if(obj.type==="Topology"){
-          const names=Object.keys(obj.objects||{}); if(!names.length){ log(`TopoJSON senza objects: ${f.name}`,"err"); continue; }
-          let pick = names[0], maxn=0;
-          for(const n of names){ const g=obj.objects[n]; const cnt=(g?.geometries||[]).length; if(cnt>maxn){maxn=cnt; pick=n;} }
-          const geo = window.topojsonClient.feature(obj, obj.objects[pick]);
-          await addFromGeoJSONObject(geo, f.name.replace(/\.[^.]+$/,""));
-        }else{
-          const isGeo = obj && ((obj.type==="FeatureCollection"&&Array.isArray(obj.features))||(obj.type==="Feature"&&obj.geometry));
-          if(!isGeo){ log(`"${f.name}" non è GeoJSON/TopoJSON valido`,"err"); continue; }
-          await addFromGeoJSONObject(obj, f.name.replace(/\.[^.]+$/,""));
-        }
-      }catch(e){ log(`Errore file ${f.name}: ${e.message}`,"err"); }
+  async function loadAllServerLayers(checks){
+    for(const cb of checks){ cb.checked = true; }
+    for(const n of SERVER_LAYERS){
+      const entry = LAYERS.find(e=>e.title===n);
+      if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
+      else      await addFromURL(n);
     }
-    ev.target.value="";
-  });
-
-  // AVVIO
-  initServerList();
-  loadPalettes();
+  }
 
 }); // require
 </script>
