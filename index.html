@@ -5,12 +5,15 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Corine – distretti & palette</title>
 
-<!-- ArcGIS JS API (caricato UNA sola volta) -->
+<!-- ArcGIS JS API (una sola volta) -->
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
 <script src="https://js.arcgis.com/4.33/"></script>
 
-<!-- TopoJSON client (UMD, non interfere col loader Dojo) -->
-<script src="https://unpkg.com/topojson-client@3"></script>
+<!-- Carico topojson-client come ES Module per evitare multipleDefine (Dojo) -->
+<script type="module">
+  import * as topojson from "https://cdn.jsdelivr.net/npm/topojson-client@3/+esm";
+  window.topojsonClient = topojson;
+</script>
 
 <style>
   html,body,#viewDiv{height:100%;margin:0}
@@ -22,7 +25,8 @@
   #panel.collapsed{display:none}
   #panelToggle{position:absolute;top:10px;left:10px;z-index:21;border:none;border-radius:10px;background:#fff;
     box-shadow:0 6px 18px rgba(0,0,0,.2);width:40px;height:40px;cursor:pointer;font-size:18px}
-  .row{display:flex;gap:8px;align-items:center;margin:.4rem 0}
+
+  .row{display:flex;gap:8px;align-items:center;margin:.5rem 0}
   .grow{flex:1}
   .card{border:1px solid #e5e7eb;border-radius:10px;background:#fafafa;padding:10px;margin-top:10px}
   .card h4{margin:.2rem 0 .6rem 0;font-size:14px}
@@ -44,16 +48,17 @@
 
   /* toast info click feature */
   #toast{position:absolute;bottom:15px;left:15px;z-index:30;background:#111;color:#fff;border-radius:10px;padding:10px 12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.4);display:none;max-width:70%}
+    box-shadow:0 6px 18px rgba(0,0,0,.4);display:none;max-width:80%}
   #toast button{margin-left:8px;border:none;border-radius:8px;padding:4px 8px;cursor:pointer}
 
   /* elenco file server */
-  #fileList{max-height:140px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:6px;background:#fafafa}
+  #fileList{max-height:160px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:6px;background:#fafafa}
   .file-item{display:flex;align-items:center;gap:8px;margin:4px 0}
 
   /* bottone shuffle globale (in basso a sinistra) */
   #btnShuffleGlobal{position:absolute;left:15px;bottom:15px;z-index:26;border:none;border-radius:999px;padding:10px 14px;
     background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}
+
 </style>
 </head>
 <body>
@@ -115,37 +120,23 @@
 
 <script>
 /* ==========================================================
-   CONFIGURA QUI I FILE TOPOJSON PRESENTI SUL SERVER (repo)
+   ELENCO DEI FILE .topojson PRESENTI NELLA STESSA CARTELLA
+   (GitHub Pages non può elencare la directory: modifica qui)
    ========================================================== */
 const SERVER_FILES = [
-  // Inserisci qui i nomi reali presenti accanto a index.html
-"AVEIRO.topojson",
-"BEJA.topojson",
-"BRAGA.topojson",
-"BRAGANCA.topojson",
-"CASTELO_BRANCO.topojson",
-"COIMBRA.topojson",
-"EVORA.topojson",
-"FARO.topojson",
-"GUARDA.topojson",
-"LEIRIA.topojson",
-"LISBOA.topojson",
-"PORTALEGRE.topojson",
-"PORTO.topojson",
-"SANTAREM.topojson",
-"SETUBAL.topojson",
-"VIANA_DO_CASTELO.topojson",
-"VILA_REAL.topojson",
-"VISEU.topojson"
-  // ...aggiungi gli altri 16
+  "AVEIRO.topojson","BEJA.topojson","BRAGA.topojson","BRAGANCA.topojson",
+  "CASTELO_BRANCO.topojson","COIMBRA.topojson","EVORA.topojson","FARO.topojson",
+  "GUARDA.topojson","LEIRIA.topojson","LISBOA.topojson","PORTALEGRE.topojson",
+  "PORTO.topojson","SANTAREM.topojson","SETUBAL.topojson","VIANA_DO_CASTELO.topojson",
+  "VILA_REAL.topojson","VISEU.topojson"
 ];
 
 /* Palette di default (20 classi, 1..20) */
 const DEFAULT_PALETTE = {
-  "1":"#a35a16","2":"#7d3f10","3":"#f1b837","4":"#312914","5":"#805835",
-  "6":"#d3b04c","7":"#2e110d","8":"#cd6b14","9":"#6a6548","10":"#7d3f10",
-  "11":"#644600","12":"#52461e","13":"#e39226","14":"#973613","15":"#6c2415",
-  "16":"#ffdf5a","17":"#0f0506","18":"#a58936","19":"#606d35","20":"#4d2212"
+  1:"#a35a16",2:"#7d3f10",3:"#f1b837",4:"#312914",5:"#805835",
+  6:"#d3b04c",7:"#2e110d",8:"#cd6b14",9:"#6a6548",10:"#7d3f10",
+  11:"#644600",12:"#52461e",13:"#e39226",14:"#973613",15:"#6c2415",
+  16:"#ffdf5a",17:"#0f0506",18:"#a58936",19:"#606d35",20:"#4d2212"
 };
 
 require([
@@ -163,7 +154,7 @@ require([
   const btnViewMode = document.getElementById("btnViewMode");
   let is3D = false;
   btnViewMode.onclick = async ()=>{
-    const state = { center: view.center.clone(), zoom: view.zoom, rotation: view.rotation };
+    const state = { center: view.center.clone(), zoom: view.zoom };
     await view.when();
     view.destroy();
     is3D = !is3D;
@@ -176,6 +167,8 @@ require([
       btnViewMode.textContent="3D"; btnViewMode.title="Passa a 3D";
     }
     bindViewExtras();
+    // aggiorna renderer per extrude on/off
+    LAYERS.forEach(e=> applyPalette(e));
   };
 
   // pannello raccoglibile
@@ -213,7 +206,6 @@ require([
   };
 
   function bindViewExtras(){
-    // click su poligono → mostra colore
     view.on("click", async (event)=>{
       try{
         const hit = await view.hitTest(event);
@@ -222,20 +214,18 @@ require([
         const layer = g.graphic.layer;
         const entry = LAYERS.find(x=>x.layer===layer);
         if(!entry){ toast.style.display="none"; return; }
-
         const attrs = g.graphic.attributes || {};
         const field = entry.groupField;
         const val = attrs[field];
         const rend = layer.renderer;
         let hex = "#000000";
         if(rend?.uniqueValueInfos){
-          const it = rend.uniqueValueInfos.find(u=>String(u.value)===String(val));
-          if(it?.symbol?.color){
-            hex = Array.isArray(it.symbol.color) ? rgbaToHex(it.symbol.color) : it.symbol.color;
-          }else if(it?.symbol?.symbolLayers?.[0]?.material?.color){
-            hex = Array.isArray(it.symbol.symbolLayers[0].material.color)
-              ? rgbaToHex(it.symbol.symbolLayers[0].material.color)
-              : it.symbol.symbolLayers[0].material.color;
+          const it = rend.uniqueValueInfos.find(u=>String(u.value)==String(val));
+          if(is3D){
+            const sl = it?.symbol?.symbolLayers?.[0];
+            if(sl?.material?.color) hex = Array.isArray(sl.material.color) ? rgbaToHex(sl.material.color) : sl.material.color;
+          }else{
+            if(it?.symbol?.color) hex = Array.isArray(it.symbol.color) ? rgbaToHex(it.symbol.color) : it.symbol.color;
           }
         }
         toastText.textContent = `layer: ${entry.title} | ${field}=${val} | color=${hex}`;
@@ -260,13 +250,13 @@ require([
   function buildRenderer(field, palette, override, extrude=false){
     const infos=[];
     for(let i=1;i<=20;i++){
-      const rank=String(i);
-      const hex=(override && (override[rank]||override[i])) || palette[rank];
+      const rank=i; // numerico (matcha sia numeri che stringhe nel dato)
+      const hex=(override && (override[rank]||override[String(rank)])) || palette[rank];
       infos.push({
         value: rank,
         symbol: is3D ? {
           type:"polygon-3d",
-          symbolLayers:[{type:"fill", material:{color:hex}, outline:{color:[0,0,0,0]}, height: extrude ? (i*150) : 0 }]
+          symbolLayers:[{type:"fill", material:{color:hex}, outline:{color:[0,0,0,0]}, height: extrude ? (rank*150) : 0 }]
         } : {
           type:"simple-fill", color: hex, outline:{ color:[0,0,0,0], width:0 }
         },
@@ -287,12 +277,12 @@ require([
   }
 
   function shuffleColors(entry){
-    const ranks=Array.from({length:20},(_,i)=>String(i+1));
+    const ranks=Array.from({length:20},(_,i)=>i+1);
     const cols=ranks.map(r=>DEFAULT_PALETTE[r]);
     for(let i=cols.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [cols[i],cols[j]]=[cols[j],cols[i]]; }
     entry.override = {}; ranks.forEach((r,i)=> entry.override[r]=cols[i]);
     applyPalette(entry);
-    updatePaletteTag(entry); // aggiorna i 20 swatch in card
+    updatePaletteTag(entry);
   }
 
   async function addFromGeoJSONObject(obj, title){
@@ -323,7 +313,7 @@ require([
         if(!names.length) throw new Error("TopoJSON senza objects");
         let pick = names[0], maxn=0;
         for(const n of names){ const g=obj.objects[n]; const cnt=(g?.geometries||[]).length; if(cnt>maxn){maxn=cnt; pick=n;} }
-        const geo = topojson.feature(obj, obj.objects[pick]);
+        const geo = window.topojsonClient.feature(obj, obj.objects[pick]);
         await addFromGeoJSONObject(geo, url.split("/").pop());
       }else{
         const isGeo = obj && ((obj.type==="FeatureCollection"&&Array.isArray(obj.features))||(obj.type==="Feature"&&obj.geometry));
@@ -334,7 +324,7 @@ require([
   }
 
   async function detectGroupField(layer){
-    const prefs=["group20","group_nac","RANK","group","Group","Rank20"];
+    const prefs=["group20","group_nac","RANK","group","Rank20"];
     try{
       const q=layer.createQuery(); q.outFields=["*"]; q.returnGeometry=false; q.num=1;
       const r=await layer.queryFeatures(q);
@@ -397,7 +387,7 @@ require([
     if(!tag) return;
     const sw = document.createElement("span");
     for(let i=1;i<=20;i++){
-      const r=String(i), hex=pal[r];
+      const hex=pal[i] || pal[String(i)];
       const s=document.createElement("span");
       s.title=`${i}:${hex}`;
       s.style.cssText=`display:inline-block;width:10px;height:10px;border:1px solid #ccc;margin-left:2px;background:${hex};vertical-align:middle;border-radius:2px`;
@@ -430,7 +420,7 @@ require([
           const names=Object.keys(obj.objects||{}); if(!names.length){ log(`TopoJSON senza objects: ${f.name}`,"err"); continue; }
           let pick = names[0], maxn=0;
           for(const n of names){ const g=obj.objects[n]; const cnt=(g?.geometries||[]).length; if(cnt>maxn){maxn=cnt; pick=n;} }
-          const geo = topojson.feature(obj, obj.objects[pick]);
+          const geo = window.topojsonClient.feature(obj, obj.objects[pick]);
           await addFromGeoJSONObject(geo, f.name);
         }else{
           const isGeo = obj && ((obj.type==="FeatureCollection"&&Array.isArray(obj.features))||(obj.type==="Feature"&&obj.geometry));
