@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Corine – distretti & palette</title>
 
+<!-- ArcGIS JS API (caricato UNA sola volta) -->
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
 <script src="https://js.arcgis.com/4.33/"></script>
-<!-- TopoJSON client per convertire .topojson -> GeoJSON in browser -->
+
+<!-- TopoJSON client (UMD, non interfere col loader Dojo) -->
 <script src="https://unpkg.com/topojson-client@3"></script>
 
 <style>
@@ -16,7 +18,7 @@
 
   /* pannello comandi (raccoglibile) */
   #panel{position:absolute;top:10px;left:10px;z-index:20;background:#fff;padding:12px;border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.2);font-size:14px;max-width:500px;max-height:92%;overflow:auto}
+    box-shadow:0 6px 18px rgba(0,0,0,.2);font-size:14px;max-width:480px;max-height:92%;overflow:auto}
   #panel.collapsed{display:none}
   #panelToggle{position:absolute;top:10px;left:10px;z-index:21;border:none;border-radius:10px;background:#fff;
     box-shadow:0 6px 18px rgba(0,0,0,.2);width:40px;height:40px;cursor:pointer;font-size:18px}
@@ -29,7 +31,7 @@
   input[type="range"]{width:100%}
   #log{font-size:12px;max-height:150px;overflow:auto;margin-top:6px}
 
-  /* basemap picker (raccoglibile) */
+  /* basemap picker */
   #bm-toggle{position:absolute;right:15px;bottom:15px;z-index:25;width:42px;height:42px;border-radius:999px;border:none;
     background:#ffffff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px}
   #bm-panel{position:absolute;right:15px;bottom:70px;z-index:24;display:none;background:#fff;border-radius:12px;
@@ -40,35 +42,25 @@
   #mapActions{position:absolute;top:10px;right:10px;z-index:22;display:flex;gap:8px}
   #mapActions button{border:none;border-radius:10px;background:#fff;padding:8px 12px;box-shadow:0 6px 18px rgba(0,0,0,.25);cursor:pointer}
 
-  /* gallery palette (raccoglibile) */
-  #palGalleryToggle{position:absolute;left:60px;top:10px;z-index:21;border:none;border-radius:10px;background:#fff;
-    box-shadow:0 6px 18px rgba(0,0,0,.2);height:40px;padding:0 10px;cursor:pointer}
-  #palGallery{position:absolute;left:60px;top:60px;z-index:20;display:none;background:#fff;border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.25);padding:12px;max-height:60%;overflow:auto;min-width:360px}
-  .pal-item{border:1px solid #eee;border-radius:10px;padding:8px;margin-bottom:8px}
-  .pal-title{font-weight:600;margin-bottom:6px}
-  .swatches{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;margin-bottom:6px}
-  .sw{height:14px;border-radius:3px;border:1px solid #ddd}
-
   /* toast info click feature */
   #toast{position:absolute;bottom:15px;left:15px;z-index:30;background:#111;color:#fff;border-radius:10px;padding:10px 12px;
     box-shadow:0 6px 18px rgba(0,0,0,.4);display:none;max-width:70%}
   #toast button{margin-left:8px;border:none;border-radius:8px;padding:4px 8px;cursor:pointer}
 
-  /* elenco file + selezione multipla */
-  #fileList{max-height:120px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:6px;background:#fafafa}
+  /* elenco file server */
+  #fileList{max-height:140px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:6px;background:#fafafa}
   .file-item{display:flex;align-items:center;gap:8px;margin:4px 0}
 
-  /* check multi-selezione per shuffle globale */
-  #multiActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  /* bottone shuffle globale (in basso a sinistra) */
+  #btnShuffleGlobal{position:absolute;left:15px;bottom:15px;z-index:26;border:none;border-radius:999px;padding:10px 14px;
+    background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}
 </style>
 </head>
 <body>
 <div id="viewDiv"></div>
 
-<!-- toggles -->
+<!-- toggle pannello -->
 <button id="panelToggle" title="Mostra/Nascondi pannello">☰</button>
-<button id="palGalleryToggle" title="Galleria palette">🎨 Palette</button>
 
 <!-- azioni mappa -->
 <div id="mapActions">
@@ -93,44 +85,22 @@
   </select>
 </div>
 
-<!-- gallery palette -->
-<div id="palGallery"></div>
-
 <!-- pannello principale -->
 <div id="panel">
-  <div class="row"><strong>Dati TopoJSON/GeoJSON</strong></div>
+  <div class="row"><strong>Layer sul server</strong></div>
+  <div id="fileList"></div>
   <div class="row">
-    <button id="btnManifest" class="grow">Leggi manifest</button>
     <button id="btnLoadAll">Carica tutti</button>
   </div>
-  <div id="fileList"></div>
 
-  <div class="row">
-    <input id="urlInput" class="grow" type="text" placeholder="./nomefile.topojson (o .geojson) o URL stessa origine">
-    <button id="btnAddUrl">Aggiungi URL</button>
-  </div>
+  <div class="row"><strong>Oppure carica file locali</strong></div>
   <div class="row">
     <input id="fileInput" class="grow" type="file" accept=".topojson,.geojson" multiple>
-    <span class="muted">oppure file locali</span>
   </div>
-
-  <hr>
-  <div class="row"><strong>Palette</strong></div>
-  <div class="row">
-    <button id="btnAutoPal">Auto-carica</button>
-    <input id="palFile" class="grow" type="file" accept=".json">
-    <button id="btnLoadPal">Carica da file</button>
-  </div>
-  <div id="palInfo" class="muted"></div>
 
   <hr>
   <div><strong>Layer caricati</strong></div>
   <div id="layersWrap"></div>
-
-  <div id="multiActions">
-    <label class="muted"><input type="checkbox" id="chkAll"> seleziona tutti</label>
-    <button id="btnShuffleSelected">🎲 Shuffle selezionati</button>
-  </div>
 
   <hr>
   <div><strong>Log</strong></div>
@@ -140,16 +110,37 @@
 <!-- toast -->
 <div id="toast"><span id="toastText"></span><button id="btnCopy">Copia</button></div>
 
+<!-- shuffle globale -->
+<button id="btnShuffleGlobal" title="Rimescola colori di tutti i layer">🎲 Shuffle</button>
+
 <script>
+/* ==========================================================
+   CONFIGURA QUI I FILE TOPOJSON PRESENTI SUL SERVER (repo)
+   ========================================================== */
+const SERVER_FILES = [
+  // Inserisci qui i nomi reali presenti accanto a index.html
+  "PORTO.topojson",
+  "LISBOA.topojson"
+  // ...aggiungi gli altri 16
+];
+
+/* Palette di default (20 classi, 1..20) */
+const DEFAULT_PALETTE = {
+  "1":"#a35a16","2":"#7d3f10","3":"#f1b837","4":"#312914","5":"#805835",
+  "6":"#d3b04c","7":"#2e110d","8":"#cd6b14","9":"#6a6548","10":"#7d3f10",
+  "11":"#644600","12":"#52461e","13":"#e39226","14":"#973613","15":"#6c2415",
+  "16":"#ffdf5a","17":"#0f0506","18":"#a58936","19":"#606d35","20":"#4d2212"
+};
+
 require([
   "esri/Map",
   "esri/views/MapView",
   "esri/views/SceneView",
   "esri/layers/GeoJSONLayer"
-], (Map, MapView, SceneView, GeoJSONLayer)=>{
+], (EsriMap, MapView, SceneView, GeoJSONLayer)=>{
 
   // ---------- MAPPA / VISTA (toggle 2D/3D) ----------
-  const map = new Map({ basemap:"gray-vector", ground: "world-elevation" });
+  const map = new EsriMap({ basemap:"gray-vector", ground:"world-elevation" });
   let view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:7 });
   view.ui.move("zoom","top-right");
 
@@ -162,13 +153,11 @@ require([
     is3D = !is3D;
     if(is3D){
       view = new SceneView({ container:"viewDiv", map, camera:{ position:[-8,39.5, 150000], tilt:60 }, qualityProfile:"high" });
-      btnViewMode.textContent="2D";
-      btnViewMode.title="Passa a 2D";
+      btnViewMode.textContent="2D"; btnViewMode.title="Passa a 2D";
     }else{
       view = new MapView({ container:"viewDiv", map, center: state.center, zoom: state.zoom });
       view.ui.move("zoom","top-right");
-      btnViewMode.textContent="3D";
-      btnViewMode.title="Passa a 3D";
+      btnViewMode.textContent="3D"; btnViewMode.title="Passa a 3D";
     }
     bindViewExtras();
   };
@@ -202,17 +191,13 @@ require([
   // toast helpers
   const toast = document.getElementById("toast");
   const toastText = document.getElementById("toastText");
-  const btnCopy = document.getElementById("btnCopy");
-  btnCopy.onclick = async ()=> {
-    try{
-      await navigator.clipboard.writeText(toastText.textContent || "");
-      toast.style.display="none";
-      log("Copiato negli appunti","ok");
-    }catch(e){ log("Copy fallita","err"); }
+  document.getElementById("btnCopy").onclick = async ()=>{
+    try{ await navigator.clipboard.writeText(toastText.textContent||""); toast.style.display="none"; log("Copiato negli appunti","ok"); }
+    catch(e){ log("Copy fallita","err"); }
   };
 
   function bindViewExtras(){
-    // click su poligono → mostra colore (codice)
+    // click su poligono → mostra colore
     view.on("click", async (event)=>{
       try{
         const hit = await view.hitTest(event);
@@ -222,7 +207,6 @@ require([
         const entry = LAYERS.find(x=>x.layer===layer);
         if(!entry){ toast.style.display="none"; return; }
 
-        // trova colore corrente dal renderer per il valore del campo
         const attrs = g.graphic.attributes || {};
         const field = entry.groupField;
         const val = attrs[field];
@@ -231,8 +215,11 @@ require([
         if(rend?.uniqueValueInfos){
           const it = rend.uniqueValueInfos.find(u=>String(u.value)===String(val));
           if(it?.symbol?.color){
-            // color può essere array RGBA o stringa hex; gestiamo entrambi
             hex = Array.isArray(it.symbol.color) ? rgbaToHex(it.symbol.color) : it.symbol.color;
+          }else if(it?.symbol?.symbolLayers?.[0]?.material?.color){
+            hex = Array.isArray(it.symbol.symbolLayers[0].material.color)
+              ? rgbaToHex(it.symbol.symbolLayers[0].material.color)
+              : it.symbol.symbolLayers[0].material.color;
           }
         }
         toastText.textContent = `layer: ${entry.title} | ${field}=${val} | color=${hex}`;
@@ -240,10 +227,7 @@ require([
       }catch{}
     });
   }
-  function rgbaToHex(c){ // [r,g,b,a]
-    const r=c[0]??0,g=c[1]??0,b=c[2]??0;
-    return "#"+[r,g,b].map(x=>x.toString(16).padStart(2,"0")).join("");
-  }
+  function rgbaToHex(c){ const r=c[0]??0,g=c[1]??0,b=c[2]??0; return "#"+[r,g,b].map(x=>x.toString(16).padStart(2,"0")).join(""); }
   bindViewExtras();
 
   // ---------- LOG ----------
@@ -254,127 +238,21 @@ require([
     console[cls==="err"?"error":cls==="ok"?"log":"log"](msg);
   };
 
-  // ---------- PALETTE ----------
-  let PALETTES = {};
-  const FALLBACK = {
-    "1":"#a35a16","2":"#7d3f10","3":"#f1b837","4":"#312914","5":"#805835",
-    "6":"#d3b04c","7":"#2e110d","8":"#cd6b14","9":"#6a6548","10":"#7d3f10",
-    "11":"#644600","12":"#52461e","13":"#e39226","14":"#973613","15":"#6c2415",
-    "16":"#ffdf5a","17":"#0f0506","18":"#a58936","19":"#606d35","20":"#4d2212"
-  };
-  function normalizePalettes(obj){
-    const out={};
-    if(Array.isArray(obj?.palettes)){
-      obj.palettes.forEach(p=>{
-        const name=p.name||"Senza nome";
-        const colors={}; for(let i=1;i<=20;i++) colors[String(i)]=p.colors?.[String(i)]||FALLBACK[String(i)];
-        out[name]={name,colors};
-      });
-    }else{
-      Object.entries(obj||{}).forEach(([name,p])=>{
-        if(!p?.colors) return;
-        const colors={}; for(let i=1;i<=20;i++) colors[String(i)]=p.colors?.[String(i)]||FALLBACK[String(i)];
-        out[name]={name,colors};
-      });
-    }
-    return out;
-  }
-  async function autoLoadPalettes(){
-    const palInfo=document.getElementById("palInfo");
-    const candidates=["./palettes_from_twb.json","./palettes.json","./data/palettes_from_twb.json"];
-    for(const url of candidates){
-      try{
-        const r=await fetch(url,{cache:"no-store"});
-        if(!r.ok){ log(`Palette 404: ${url}`,"err"); continue; }
-        PALETTES=normalizePalettes(await r.json());
-        palInfo.textContent=`Palette caricate da ${url}: ${Object.keys(PALETTES).length}`;
-        log(`Palette caricate da ${url}`,"ok");
-        buildPaletteGallery();
-        refreshLayerCards();
-        return;
-      }catch(e){ log(`Errore palette ${url}: ${e.message}`,"err"); }
-    }
-    PALETTES={"Default":{name:"Default",colors:{...FALLBACK}}};
-    palInfo.textContent="Nessuna palette trovata (fallback).";
-    log("Palette non trovate: attivo fallback","err");
-    buildPaletteGallery();
-    refreshLayerCards();
-  }
-  document.getElementById("btnAutoPal").onclick=autoLoadPalettes;
-  document.getElementById("btnLoadPal").onclick=async()=>{
-    const f=document.getElementById("palFile").files[0];
-    if(!f){ alert("Seleziona un file JSON"); return; }
-    try{
-      PALETTES = normalizePalettes(JSON.parse(await f.text()));
-      document.getElementById("palInfo").textContent=`Palette caricate: ${Object.keys(PALETTES).length}`;
-      buildPaletteGallery();
-      log("Palette caricate da file","ok");
-      refreshLayerCards();
-    }catch(e){ log("JSON palette non valido","err"); }
-  };
-
-  // ---------- GALLERIA PALETTE ----------
-  const palGallery = document.getElementById("palGallery");
-  const palGalleryToggle = document.getElementById("palGalleryToggle");
-  palGalleryToggle.onclick = ()=> palGallery.style.display = (palGallery.style.display==="block"?"none":"block");
-
-  function buildPaletteGallery(){
-    palGallery.innerHTML = "<h4 style='margin:0 0 8px 0'>Galleria palette</h4>";
-    Object.values(PALETTES).forEach(p=>{
-      const div=document.createElement("div"); div.className="pal-item";
-      const title=document.createElement("div"); title.className="pal-title"; title.textContent=p.name;
-      const sw1=document.createElement("div"); sw1.className="swatches";
-      const sw2=document.createElement("div"); sw2.className="swatches";
-      for(let i=1;i<=10;i++){ const c=document.createElement("div"); c.className="sw"; c.style.background=p.colors[String(i)]; sw1.appendChild(c); }
-      for(let i=11;i<=20;i++){ const c=document.createElement("div"); c.className="sw"; c.style.background=p.colors[String(i)]; sw2.appendChild(c); }
-      const apply=document.createElement("button"); apply.textContent="Applica ai selezionati";
-      apply.onclick=()=>{
-        const selected = getSelectedLayerEntries();
-        selected.forEach(e=>{ e.paletteName=p.name; e.override=null; applyPalette(e); });
-        refreshLayerCards();
-      };
-      div.appendChild(title); div.appendChild(sw1); div.appendChild(sw2); div.appendChild(apply);
-      palGallery.appendChild(div);
-    });
-  }
-
-  // ---------- LAYERS ----------
-  const LAYERS=[]; // {layer,title,groupField,paletteName,override,opacity,selected}
-
-  function getSelectedLayerEntries(){ return LAYERS.filter(e=>e.selected); }
-
-  async function detectGroupField(layer){
-    const prefs=["group20","group_nac","RANK","group_20","group","Group","Group20","class","CLASS","clc2012","CLC2012","group_id","Group_ID","Rank20"];
-    try{
-      const q=layer.createQuery(); q.outFields=["*"]; q.returnGeometry=false; q.num=1;
-      const r=await layer.queryFeatures(q);
-      if(r.features.length){
-        const attrs=r.features[0].attributes;
-        for(const k of prefs){ if(k in attrs) return k; }
-        const keys=Object.keys(attrs); return keys.find(k=>k!=="OBJECTID"&&k!=="FID")||keys[0]||null;
-      }
-    }catch{}
-    return null;
-  }
-
-  function getOverrideColor(override, rank){
-    if(!override) return null;
-    return override[rank] || override[String(rank)] || null;
-  }
+  // ---------- GESTIONE LAYERS ----------
+  const LAYERS=[]; // {layer,title,groupField,override,opacity}
 
   function buildRenderer(field, palette, override, extrude=false){
     const infos=[];
     for(let i=1;i<=20;i++){
       const rank=String(i);
-      const hex=getOverrideColor(override,rank) || palette.colors[rank];
+      const hex=(override && (override[rank]||override[i])) || palette[rank];
       infos.push({
         value: rank,
-        symbol: {
-          type: is3D ? "polygon-3d" : "simple-fill",
-          ...(is3D
-            ? { symbolLayers:[{type:"fill", material:{color:hex}, outline:{color:[0,0,0,0]}, edges:{type:"solid", color:[0,0,0,0]},
-                               height: extrude ? (i*150) : 0 }] }
-            : { color: hex, outline:{ color:[0,0,0,0], width:0 } })
+        symbol: is3D ? {
+          type:"polygon-3d",
+          symbolLayers:[{type:"fill", material:{color:hex}, outline:{color:[0,0,0,0]}, height: extrude ? (i*150) : 0 }]
+        } : {
+          type:"simple-fill", color: hex, outline:{ color:[0,0,0,0], width:0 }
         },
         label:`Classe ${rank}`
       });
@@ -387,19 +265,18 @@ require([
   }
 
   function applyPalette(entry){
-    const pal=PALETTES[entry.paletteName]||PALETTES["Default"];
-    if(!entry.groupField){ log(`${entry.title}: imposta il campo gruppo nella card`,"err"); return; }
-    entry.layer.renderer = buildRenderer(entry.groupField, pal, entry.override, /*extrude*/ is3D);
+    if(!entry.groupField){ log(`${entry.title}: imposta il campo legenda (es. group20 o group_nac)`,"err"); return; }
+    entry.layer.renderer = buildRenderer(entry.groupField, DEFAULT_PALETTE, entry.override, is3D);
     entry.layer.opacity = entry.opacity ?? 1;
   }
 
   function shuffleColors(entry){
-    const pal=PALETTES[entry.paletteName]||PALETTES["Default"];
     const ranks=Array.from({length:20},(_,i)=>String(i+1));
-    const cols=ranks.map(r=>pal.colors[r]);
+    const cols=ranks.map(r=>DEFAULT_PALETTE[r]);
     for(let i=cols.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [cols[i],cols[j]]=[cols[j],cols[i]]; }
-    entry.override={}; ranks.forEach((r,i)=> entry.override[r]=cols[i]);
+    entry.override = {}; ranks.forEach((r,i)=> entry.override[r]=cols[i]);
     applyPalette(entry);
+    updatePaletteTag(entry); // aggiorna i 20 swatch in card
   }
 
   async function addFromGeoJSONObject(obj, title){
@@ -407,10 +284,10 @@ require([
     const blobUrl=URL.createObjectURL(blob);
     const layer=new GeoJSONLayer({ url: blobUrl, title });
     map.add(layer);
-    const entry={ layer, title, groupField:null, paletteName:Object.keys(PALETTES)[0]||"Default", override:null, opacity:1, selected:false };
+    const entry={ layer, title, groupField:null, override:null, opacity:1 };
     LAYERS.push(entry);
     layer.when(async()=>{
-      entry.groupField=await detectGroupField(layer);
+      entry.groupField = await detectGroupField(layer);
       applyPalette(entry);
       refreshLayerCards();
       try{ const ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch{}
@@ -425,38 +302,46 @@ require([
       const txt=await resp.text();
       let obj;
       try{ obj=JSON.parse(txt); }catch(e){ throw new Error("JSON non valido"); }
-      if(obj.type==="Topology"){ // TopoJSON → GeoJSON
-        // assumiamo che il primo oggetto sia quello giusto; altrimenti seleziona quello con più archi
+      if(obj.type==="Topology"){
         const names = Object.keys(obj.objects||{});
         if(!names.length) throw new Error("TopoJSON senza objects");
-        // pick: max geometries
-        let pick = names[0], maxn = 0;
-        for(const n of names){ const g = obj.objects[n]; const cnt=(g?.geometries||[]).length; if(cnt>maxn){maxn=cnt; pick=n;} }
+        let pick = names[0], maxn=0;
+        for(const n of names){ const g=obj.objects[n]; const cnt=(g?.geometries||[]).length; if(cnt>maxn){maxn=cnt; pick=n;} }
         const geo = topojson.feature(obj, obj.objects[pick]);
         await addFromGeoJSONObject(geo, url.split("/").pop());
       }else{
-        if(!(obj && ((obj.type==="FeatureCollection"&&Array.isArray(obj.features))||(obj.type==="Feature"&&obj.geometry)))){
-          throw new Error("Formato non riconosciuto (serve Topology o GeoJSON)");
-        }
+        const isGeo = obj && ((obj.type==="FeatureCollection"&&Array.isArray(obj.features))||(obj.type==="Feature"&&obj.geometry));
+        if(!isGeo) throw new Error("Formato non riconosciuto");
         await addFromGeoJSONObject(obj, url.split("/").pop());
       }
     }catch(e){ log(`Errore URL ${url}: ${e.message}`,"err"); }
   }
 
-  // ---------- UI layer cards ----------
+  async function detectGroupField(layer){
+    const prefs=["group20","group_nac","RANK","group","Group","Rank20"];
+    try{
+      const q=layer.createQuery(); q.outFields=["*"]; q.returnGeometry=false; q.num=1;
+      const r=await layer.queryFeatures(q);
+      if(r.features.length){
+        const attrs=r.features[0].attributes;
+        for(const k of prefs){ if(k in attrs) return k; }
+        const keys=Object.keys(attrs);
+        return keys.find(k=>k!=="OBJECTID"&&k!=="FID")||keys[0]||null;
+      }
+    }catch{}
+    return null;
+  }
+
+  // ---------- UI: cards ----------
   function refreshLayerCards(){
     const wrap=document.getElementById("layersWrap"); wrap.innerHTML="";
     LAYERS.forEach((entry,idx)=>{
       const card=document.createElement("div"); card.className="card";
       card.innerHTML=`
-        <h4><label><input type="checkbox" id="sel-${idx}" ${entry.selected?"checked":""}> ${entry.title}</label></h4>
+        <h4>${entry.title}</h4>
         <div class="row">
           <label class="muted" style="width:130px">Campo legenda</label>
           <input id="gf-${idx}" class="grow" type="text" value="${entry.groupField??''}" placeholder="es. group20 o group_nac">
-        </div>
-        <div class="row">
-          <label class="muted" style="width:130px">Palette</label>
-          <select id="pal-${idx}" class="grow"></select>
         </div>
         <div class="row">
           <label class="muted" style="width:130px">Trasparenza</label>
@@ -470,133 +355,70 @@ require([
         <div class="row"><span class="muted" id="palTag-${idx}"></span></div>`;
       wrap.appendChild(card);
 
-      const sel=card.querySelector(`#pal-${idx}`); sel.innerHTML="";
-      Object.keys(PALETTES).forEach(name=>{
-        const opt=document.createElement("option"); opt.value=name; opt.textContent=name;
-        if(name===entry.paletteName) opt.selected=true;
-        sel.appendChild(opt);
-      });
+      const gf = card.querySelector(`#gf-${idx}`);
+      const op = card.querySelector(`#op-${idx}`);
+      const tag= card.querySelector(`#palTag-${idx}`);
 
-      const tag = card.querySelector(`#palTag-${idx}`); updatePaletteTag(tag, entry);
+      gf.addEventListener("change", e=>{ entry.groupField = e.target.value.trim(); applyPalette(entry); updatePaletteTag(entry); });
+      op.addEventListener("input", e=>{ entry.opacity = Number(e.target.value); entry.layer.opacity = entry.opacity; });
 
-      card.querySelector(`#sel-${idx}`).addEventListener("change", e=>{
-        entry.selected = e.target.checked;
-      });
-      card.querySelector(`#gf-${idx}`).addEventListener("change", e=>{
-        entry.groupField = e.target.value.trim();
-        applyPalette(entry); updatePaletteTag(tag, entry);
-      });
-      sel.addEventListener("change", e=>{
-        entry.paletteName = e.target.value; entry.override=null; applyPalette(entry); updatePaletteTag(tag, entry);
-      });
-      card.querySelector(`#op-${idx}`).addEventListener("input", e=>{
-        entry.opacity = Number(e.target.value);
-        entry.layer.opacity = entry.opacity;
-      });
-      card.querySelector(`#btnShuffle-${idx}`).onclick=()=>{ shuffleColors(entry); updatePaletteTag(tag, entry); };
-      card.querySelector(`#btnApply-${idx}`).onclick=()=>{ applyPalette(entry); updatePaletteTag(tag, entry); };
+      card.querySelector(`#btnShuffle-${idx}`).onclick=()=>{ shuffleColors(entry); };
+      card.querySelector(`#btnApply-${idx}`).onclick=()=>{ applyPalette(entry); updatePaletteTag(entry); };
       card.querySelector(`#btnRemove-${idx}`).onclick=()=>{
         map.remove(entry.layer);
-        LAYERS.splice(idx,1);
+        const i = LAYERS.indexOf(entry);
+        if(i>=0) LAYERS.splice(i,1);
         refreshLayerCards();
       };
+
+      updatePaletteTag(entry);
     });
   }
 
-  function updatePaletteTag(el, entry){
-    const pal=PALETTES[entry.paletteName]||PALETTES["Default"];
-    const sw=createSwatchRow(pal, entry.override);
-    el.innerHTML = `Palette: <strong>${entry.paletteName}</strong> ${sw}`;
-  }
-  function createSwatchRow(pal, override){
-    const wrap=document.createElement("span");
-    const make = (i)=>{
-      const r=String(i);
-      const hex = (override?.[r]) || pal.colors[r];
+  function updatePaletteTag(entry){
+    const pal = entry.override || DEFAULT_PALETTE;
+    const tag = document.querySelector(`#palTag-${LAYERS.indexOf(entry)}`);
+    if(!tag) return;
+    const sw = document.createElement("span");
+    for(let i=1;i<=20;i++){
+      const r=String(i), hex=pal[r];
       const s=document.createElement("span");
       s.title=`${i}:${hex}`;
       s.style.cssText=`display:inline-block;width:10px;height:10px;border:1px solid #ccc;margin-left:2px;background:${hex};vertical-align:middle;border-radius:2px`;
-      return s;
-    };
-    for(let i=1;i<=20;i++) wrap.appendChild(make(i));
-    return wrap.outerHTML;
-  }
-
-  // shuffle globale per selezionati
-  document.getElementById("chkAll").addEventListener("change", e=>{
-    LAYERS.forEach(x=> x.selected = e.target.checked);
-    refreshLayerCards();
-  });
-  document.getElementById("btnShuffleSelected").onclick = ()=>{
-    const arr = getSelectedLayerEntries();
-    if(!arr.length){ log("Nessun layer selezionato","err"); return; }
-    arr.forEach(e=> shuffleColors(e));
-    refreshLayerCards();
-  };
-
-  // ---------- LISTA FILE DAL SERVER ----------
-  // Serve dataset_manifest.json (array di nomi). Se manca, usa fallback editabile.
-  let SERVER_FILES = [
-    // Fallback: modifica questi nomi se vuoi
-    "PORTO.topojson","LISBOA.topojson"
-  ];
-  const fileList = document.getElementById("fileList");
-
-  async function loadManifest(){
-    try{
-      const r=await fetch("./dataset_manifest.json",{cache:"no-store"});
-      if(!r.ok) throw new Error(`HTTP ${r.status}`);
-      const arr=await r.json();
-      if(!Array.isArray(arr)) throw new Error("manifest non è un array");
-      SERVER_FILES = arr;
-      log(`Manifest caricato: ${arr.length} file`,"ok");
-    }catch(e){
-      log(`Manifest non trovato o invalido (uso fallback) — ${e.message}`,"err");
+      sw.appendChild(s);
     }
-    rebuildFileList();
+    tag.innerHTML = `Palette: <strong>Default</strong> ${sw.outerHTML}`;
   }
 
+  // ---------- LISTA SERVER ----------
+  const fileList = document.getElementById("fileList");
   function rebuildFileList(){
     fileList.innerHTML="";
     SERVER_FILES.forEach(n=>{
       const div=document.createElement("div"); div.className="file-item";
-      const cb=document.createElement("input"); cb.type="checkbox"; cb.value=n;
-      const lbl=document.createElement("span"); lbl.textContent=n;
-      const btn=document.createElement("button"); btn.textContent="Aggiungi";
+      const btn=document.createElement("button"); btn.textContent="Carica";
       btn.onclick=()=> addFromURL("./"+n);
-      div.appendChild(cb); div.appendChild(lbl); div.appendChild(btn);
+      const lbl=document.createElement("span"); lbl.textContent=n;
+      div.appendChild(btn); div.appendChild(lbl);
       fileList.appendChild(div);
     });
   }
+  document.getElementById("btnLoadAll").onclick = ()=> { SERVER_FILES.forEach(n=> addFromURL("./"+n)); };
 
-  document.getElementById("btnManifest").onclick = loadManifest;
-  document.getElementById("btnLoadAll").onclick = ()=> {
-    const checks = [...fileList.querySelectorAll("input[type=checkbox]:checked")];
-    const pick = checks.length ? checks.map(x=>x.value) : SERVER_FILES;
-    pick.forEach(n=> addFromURL("./"+n));
-  };
-
-  // ---------- INPUT VARI ----------
-  document.getElementById("btnAddUrl").onclick=()=>{
-    const u=(document.getElementById("urlInput").value||"").trim();
-    if(u) addFromURL(u);
-  };
+  // ---------- FILE LOCALI ----------
   document.getElementById("fileInput").addEventListener("change", async ev=>{
     for(const f of ev.target.files){
       try{
-        const txt=await f.text();
-        const obj=JSON.parse(txt);
-        if(obj.type==="Topology"){ // TopoJSON
-          const names=Object.keys(obj.objects||{});
-          if(!names.length){ log(`TopoJSON senza objects: ${f.name}`,"err"); continue; }
+        const txt=await f.text(); const obj=JSON.parse(txt);
+        if(obj.type==="Topology"){
+          const names=Object.keys(obj.objects||{}); if(!names.length){ log(`TopoJSON senza objects: ${f.name}`,"err"); continue; }
           let pick = names[0], maxn=0;
           for(const n of names){ const g=obj.objects[n]; const cnt=(g?.geometries||[]).length; if(cnt>maxn){maxn=cnt; pick=n;} }
           const geo = topojson.feature(obj, obj.objects[pick]);
           await addFromGeoJSONObject(geo, f.name);
         }else{
-          if(!(obj && ((obj.type==="FeatureCollection"&&Array.isArray(obj.features))||(obj.type==="Feature"&&obj.geometry)))){
-            log(`"${f.name}" non è GeoJSON/TopoJSON valido`,"err"); continue;
-          }
+          const isGeo = obj && ((obj.type==="FeatureCollection"&&Array.isArray(obj.features))||(obj.type==="Feature"&&obj.geometry));
+          if(!isGeo){ log(`"${f.name}" non è GeoJSON/TopoJSON valido`,"err"); continue; }
           await addFromGeoJSONObject(obj, f.name);
         }
       }catch(e){ log(`Errore file ${f.name}: ${e.message}`,"err"); }
@@ -604,9 +426,15 @@ require([
     ev.target.value="";
   });
 
+  // ---------- SHUFFLE GLOBALE ----------
+  document.getElementById("btnShuffleGlobal").onclick = ()=>{
+    if(!LAYERS.length){ log("Nessun layer caricato","err"); return; }
+    LAYERS.forEach(e=> shuffleColors(e));
+    refreshLayerCards();
+  };
+
   // ---------- AVVIO ----------
-  autoLoadPalettes();
-  loadManifest(); // popola elenco file
+  rebuildFileList();
 
 });
 </script>
