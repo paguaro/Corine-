@@ -5,11 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Corine – distretti & palette</title>
 
-<!-- ArcGIS JS API -->
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
 <script src="https://js.arcgis.com/4.33/"></script>
 
-<!-- TopoJSON come ES Module (evita multipleDefine con Dojo) -->
+<!-- TopoJSON come ES Module (evita multipleDefine) -->
 <script type="module">
   import * as topojson from "https://cdn.jsdelivr.net/npm/topojson-client@3/+esm";
   window.topojsonClient = topojson;
@@ -21,7 +20,7 @@
 
   /* pannello layer (raccoglibile) */
   #panel{position:absolute;top:10px;left:10px;z-index:20;background:#fff;padding:12px;border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.2);font-size:14px;max-width:540px;max-height:92%;overflow:auto}
+    box-shadow:0 6px 18px rgba(0,0,0,.2);font-size:14px;max-width:560px;max-height:92%;overflow:auto}
   #panel.collapsed{display:none}
   #panelToggle{position:absolute;top:10px;left:10px;z-index:21;border:none;border-radius:10px;background:#fff;
     box-shadow:0 6px 18px rgba(0,0,0,.2);width:40px;height:40px;cursor:pointer;font-size:18px}
@@ -36,10 +35,23 @@
   .card{border:1px solid #e5e7eb;border-radius:10px;background:#fafafa;padding:10px;margin-top:10px}
   .card h4{margin:.2rem 0 .6rem 0;font-size:14px}
 
-  /* lista file server */
-  #serverWrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
-  .srv-item{border:1px solid #e5e7eb;border-radius:10px;padding:8px;background:#fff;display:flex;align-items:center;gap:8px}
-  .srv-name{font-weight:600;flex:1}
+  /* lista file server – compatta */
+  #serverWrap{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+    gap:6px
+  }
+  .srv-item{
+    display:grid;
+    grid-template-columns:auto 1fr;
+    align-items:center;
+    gap:6px;
+    border:1px solid #e5e7eb;
+    border-radius:8px;
+    background:#fff;
+    padding:6px 8px
+  }
+  .srv-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
   /* palette gallery (raccoglibile) */
   #palToggle{position:absolute;left:60px;top:10px;z-index:21;border:none;border-radius:10px;background:#fff;
@@ -52,16 +64,15 @@
   .sw-row{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
   .sw{height:14px;border-radius:3px;border:1px solid #ddd}
 
-  /* export PNG (in basso a destra) */
-  #btnExport{position:absolute;right:15px;bottom:15px;z-index:26;border:none;border-radius:999px;padding:10px 14px;
-    background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}
-
-  /* basemap picker */
+  /* basemap & export */
   #bm-toggle{position:absolute;right:70px;bottom:15px;z-index:25;width:42px;height:42px;border-radius:999px;border:none;
     background:#ffffff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px}
   #bm-panel{position:absolute;right:70px;bottom:70px;z-index:24;display:none;background:#fff;border-radius:12px;
     box-shadow:0 6px 18px rgba(0,0,0,.25);padding:10px;min-width:220px}
   #bm-panel label{display:block;font-size:12px;color:#555;margin-bottom:4px}
+
+  #btnExport{position:absolute;right:125px;bottom:15px;z-index:26;border:none;border-radius:999px;padding:10px 14px;
+    background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}
 
   /* shuffle globale */
   #btnShuffleGlobal{position:absolute;left:15px;bottom:15px;z-index:26;border:none;border-radius:999px;padding:10px 14px;
@@ -106,13 +117,13 @@
   <div class="row"><strong>Controlli globali</strong></div>
   <div class="row">
     <label class="muted">Campo legenda</label>
-    <label><input type="radio" name="globalField" value="group20" checked> group20</label>
-    <label><input type="radio" name="globalField" value="group_nac"> group_nac</label>
+    <label><input type="radio" name="globalFieldUi" value="distrital" checked> Distrital</label>
+    <label><input type="radio" name="globalFieldUi" value="nacional"> Nacional</label>
     <button id="btnApplyGlobalField">Applica ai layer visibili</button>
   </div>
-  <div class="row">
+  <div class="row" style="align-items:flex-start">
     <button id="btnApplyActivePalette">Applica palette attiva ai layer visibili</button>
-    <span id="activePalTag" class="muted"></span>
+    <div id="activePalTag" class="muted grow"></div>
   </div>
 
   <hr>
@@ -144,29 +155,21 @@
 <div id="toast"><span id="toastText"></span><button id="btnCopy">Copia</button></div>
 
 <script>
-/* ==========================
-   LAYER presenti sul server
-   (solo NOME base, senza .topojson)
-   ========================== */
+/* ===== Nomi base (senza .topojson) ===== */
 const SERVER_LAYERS = [
   "AVEIRO","BEJA","BRAGA","BRAGANCA","CASTELO_BRANCO","COIMBRA","EVORA","FARO",
   "GUARDA","LEIRIA","LISBOA","PORTALEGRE","PORTO","SANTAREM","SETUBAL",
   "VIANA_DO_CASTELO","VILA_REAL","VISEU"
 ];
 
-/* ==========================
-   VARIABILI APP
-   ========================== */
-let PALETTES = {};              // nome -> {name, colors:{1..20:"#hex"}}
-let ACTIVE_PALETTE_NAMES = [];  // ordine nomi
-let activePaletteName = null;   // palette attiva (scelta dalla gallery)
-let activeLayerIndex = null;    // opzionale, non più necessario per applicare a tutti
-const LAYERS = [];              // [{layer,title,groupField,opacity,override,basePalette,visible}]
+/* ===== Stato app ===== */
+let PALETTES = {};               // {name:{name, colors{1..20:"#hex"}}}
+let ACTIVE_PALETTE_NAMES = [];
+let activePaletteName = null;    // palette “attiva” (gallery)
+const LAYERS = [];               // [{layer,title,groupField,opacity,override,basePalette,visible}]
 let map, view;
 
-/* ==========================
-   MAPPA 2D
-   ========================== */
+/* ===== Init mappa ===== */
 require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,MapView,GeoJSONLayer)=>{
 
   map = new EsriMap({ basemap:"gray-vector" });
@@ -180,7 +183,7 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
   const palPanel = document.getElementById("palPanel");
   document.getElementById("palToggle").onclick = ()=> palPanel.style.display = (palPanel.style.display==="block"?"none":"block");
 
-  // basemap picker
+  // basemap
   const btnBM = document.getElementById("bm-toggle");
   const pnlBM = document.getElementById("bm-panel");
   const selBM = document.getElementById("bm-select");
@@ -235,7 +238,7 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
     console[cls==="err"?"error":cls==="ok"?"log":"log"](msg);
   };
 
-  // ====== PALETTE ======
+  /* ===== Palettes ===== */
   async function loadPalettes(){
     try{
       const r = await fetch("./palettes_from_twb.json",{cache:"no-store"});
@@ -252,7 +255,7 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
       }else{
         Object.entries(raw||{}).forEach(([name,p])=> add(name, p?.colors||{}));
       }
-      PALETTES = out; ACTIVE_PALETTE_NAMES = Object.keys(out);
+      PALETTES = out; ACTIVE_PALETTE_NAMES = Object.keys(out).sort();
       activePaletteName = ACTIVE_PALETTE_NAMES[0] || null;
       buildPaletteGallery();
       updateActivePalTag();
@@ -261,6 +264,7 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
       log("Impossibile caricare palettes_from_twb.json (nessuna palette disponibile)","err");
     }
   }
+
   function buildPaletteGallery(){
     const panel = document.getElementById("palPanel");
     panel.innerHTML = "";
@@ -288,11 +292,32 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
       panel.appendChild(div);
     });
   }
-  function updateActivePalTag(){
-    document.getElementById("activePalTag").textContent = activePaletteName ? `Palette attiva: ${activePaletteName}` : "(nessuna palette attiva)";
+
+  function renderSwatches(colors){
+    const wrap=document.createElement("div");
+    wrap.className="sw-row";
+    for(let i=1;i<=10;i++){
+      const s=document.createElement("div"); s.className="sw"; s.style.background=colors[String(i)];
+      wrap.appendChild(s);
+    }
+    const wrap2=document.createElement("div"); wrap2.className="sw-row";
+    for(let i=11;i<=20;i++){
+      const s=document.createElement("div"); s.className="sw"; s.style.background=colors[String(i)];
+      wrap2.appendChild(s);
+    }
+    const container=document.createElement("div");
+    container.appendChild(wrap); container.appendChild(wrap2);
+    return container.outerHTML;
   }
 
-  // ====== RENDERER & APPLICAZIONE ======
+  function updateActivePalTag(){
+    const el = document.getElementById("activePalTag");
+    if(!activePaletteName){ el.textContent="(nessuna palette attiva)"; return; }
+    const p = PALETTES[activePaletteName];
+    el.innerHTML = `Palette attiva: <strong>${activePaletteName}</strong><br>${renderSwatches(p.colors)}`;
+  }
+
+  /* ===== Renderer ===== */
   function buildRenderer(field, palette, override){
     const infos=[];
     for(let i=1;i<=20;i++){
@@ -311,8 +336,9 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
       uniqueValueInfos: infos
     };
   }
+
   function applyPalette(entry){
-    if(!entry.groupField){ log(`${entry.title}: imposta il campo legenda (es. group20 o group_nac)`,"err"); return; }
+    if(!entry.groupField){ log(`${entry.title}: imposta il campo legenda (Distrital/Nacional)`,`err`); return; }
     if(!entry.basePalette){
       if(!activePaletteName){ log("Nessuna palette attiva: scegli dalla gallery","err"); return; }
       entry.basePalette = PALETTES[activePaletteName];
@@ -320,6 +346,7 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
     entry.layer.renderer = buildRenderer(entry.groupField, entry.basePalette, entry.override);
     entry.layer.opacity = entry.opacity ?? 1;
   }
+
   function shuffleColors(entry){
     if(!entry.basePalette){ log(`Imposta una palette per ${entry.title}`,"err"); return; }
     const ranks=[...Array(20)].map((_,i)=>String(i+1));
@@ -329,15 +356,15 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
     applyPalette(entry);
     updateCardSwatches(entry);
   }
+
   function resetLayer(entry){
-    // Reimposta la palette attiva e pulisce lo shuffle
-    if(activePaletteName){
-      entry.basePalette = PALETTES[activePaletteName];
-    }
+    // torna alla palette attiva (senza shuffle) mantenendo il campo legenda del layer
+    if(activePaletteName){ entry.basePalette = PALETTES[activePaletteName]; }
     entry.override = null;
     applyPalette(entry);
     updateCardSwatches(entry);
   }
+
   function applyActivePaletteToVisible(){
     if(!activePaletteName){ log("Seleziona prima una palette nella gallery","err"); return; }
     const p = PALETTES[activePaletteName];
@@ -350,7 +377,7 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
     refreshLayerCards();
   }
 
-  // ====== CARICAMENTO: TopoJSON / GeoJSON ======
+  /* ===== Caricamento dati ===== */
   async function addFromGeoJSONObject(obj, titleBase){
     const blob=new Blob([JSON.stringify(obj)],{type:"application/json"});
     const blobUrl=URL.createObjectURL(blob);
@@ -360,7 +387,6 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
     LAYERS.push(entry);
     layer.when(async()=>{
       entry.groupField = await detectGroupField(layer);
-      // assegna subito palette attiva (se esiste) e applica
       if(activePaletteName) entry.basePalette = PALETTES[activePaletteName];
       applyPalette(entry);
       refreshLayerCards();
@@ -368,6 +394,7 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
       log(`Caricato: ${titleBase}`,"ok");
     });
   }
+
   async function addFromURL(baseName){
     const url = `./${baseName}.topojson`;
     try{
@@ -388,6 +415,7 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
       }
     }catch(e){ log(`Errore "${baseName}": ${e.message}`,"err"); }
   }
+
   async function detectGroupField(layer){
     const prefs=["group20","group_nac","RANK","group","Rank20"];
     try{
@@ -403,25 +431,22 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
     return null;
   }
 
-  // ====== UI — Server list ======
+  /* ===== UI — Server (compatta) ===== */
   const serverWrap = document.getElementById("serverWrap");
-  // mapping nome -> entry per gestire toggle visibilità da checkbox server
-  const nameToEntry = new Map();
-
   function initServerList(){
     serverWrap.innerHTML="";
     SERVER_LAYERS.forEach(name=>{
-      const item=document.createElement("div"); item.className="srv-item";
+      const it=document.createElement("div"); it.className="srv-item";
       const cb=document.createElement("input"); cb.type="checkbox"; cb.value=name;
       const lbl=document.createElement("div"); lbl.className="srv-name"; lbl.textContent=name.replace(/_/g," ");
-      item.appendChild(cb); item.appendChild(lbl);
-      serverWrap.appendChild(item);
+      it.appendChild(cb); it.appendChild(lbl);
+      serverWrap.appendChild(it);
 
       cb.onchange = async ()=>{
-        const entry = nameToEntry.get(name);
+        const entry = LAYERS.find(e=>e.title===name);
         if(cb.checked){
           if(entry){ entry.visible = true; entry.layer.visible = true; refreshLayerCards(); }
-          else      await addFromURL(name).then(()=> nameToEntry.set(name, LAYERS[LAYERS.length-1]));
+          else      await addFromURL(name);
         }else{
           if(entry){ entry.visible = false; entry.layer.visible = false; refreshLayerCards(); }
         }
@@ -437,9 +462,9 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
       }else{
         for(const n of picked){
           const cb = checks.find(x=>x.value===n); if(cb) cb.checked = true;
-          const entry = nameToEntry.get(n);
+          const entry = LAYERS.find(e=>e.title===n);
           if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
-          else      await addFromURL(n).then(()=> nameToEntry.set(n, LAYERS[LAYERS.length-1]));
+          else      await addFromURL(n);
         }
       }
     };
@@ -453,13 +478,13 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
   async function loadAllServerLayers(checks){
     for(const cb of checks){ cb.checked = true; }
     for(const n of SERVER_LAYERS){
-      const entry = nameToEntry.get(n);
+      const entry = LAYERS.find(e=>e.title===n);
       if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
-      else      await addFromURL(n).then(()=> nameToEntry.set(n, LAYERS[LAYERS.length-1]));
+      else      await addFromURL(n);
     }
   }
 
-  // ====== UI — File locali ======
+  /* ===== UI — File locali ===== */
   document.getElementById("fileInput").addEventListener("change", async ev=>{
     for(const f of ev.target.files){
       try{
@@ -481,19 +506,34 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
     ev.target.value="";
   });
 
-  // ====== UI — Layer cards ======
+  /* ===== UI — Layer cards ===== */
   const layersWrap = document.getElementById("layersWrap");
+
+  // mappatura etichette UI -> nomi campo reali
+  function uiToFieldName(val){ return val === "nacional" ? "group_nac" : "group20"; }
+
   function refreshLayerCards(){
     layersWrap.innerHTML="";
     LAYERS.forEach((entry,idx)=>{
       const card=document.createElement("div"); card.className="card";
+      const currentUi = entry.groupField === "group_nac" ? "nacional" : (entry.groupField === "group20" ? "distrital" : "custom");
       card.innerHTML=`
         <h4>${entry.title}</h4>
-        <div class="row">
-          <label class="muted" style="width:90px">Visibile</label>
+        <div class="row" style="gap:12px">
+          <label class="muted">Visibile</label>
           <input type="checkbox" id="vis-${idx}" ${entry.visible?"checked":""}>
-          <label class="muted" style="margin-left:12px;width:110px">Campo legenda</label>
-          <input id="gf-${idx}" class="grow" type="text" value="${entry.groupField??''}" placeholder="group20 o group_nac">
+          <span style="width:8px"></span>
+          <label class="muted">Campo legenda</label>
+          <select id="gfsel-${idx}">
+            <option value="distrital" ${currentUi==="distrital"?"selected":""}>Distrital</option>
+            <option value="nacional" ${currentUi==="nacional"?"selected":""}>Nacional</option>
+            ${currentUi==="custom" ? `<option value="__custom" selected>Custom (${entry.groupField})</option>` : ""}
+          </select>
+          <input id="gfcustom-${idx}" type="text" placeholder="custom field" value="${currentUi==="custom"?entry.groupField:""}" style="width:140px; ${currentUi==="custom"?"":"display:none"}">
+        </div>
+        <div class="row" style="gap:12px">
+          <label class="muted">Palette (layer)</label>
+          <select id="palsel-${idx}" class="grow"></select>
         </div>
         <div class="row">
           <label class="muted" style="width:90px">Trasparenza</label>
@@ -512,9 +552,41 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
       const vis = card.querySelector(`#vis-${idx}`);
       vis.onchange = ()=>{ entry.visible = vis.checked; entry.layer.visible = entry.visible; };
 
-      // campo legenda
-      const gf = card.querySelector(`#gf-${idx}`);
-      gf.onchange = ()=>{ entry.groupField = gf.value.trim(); applyPalette(entry); updateCardSwatches(entry); };
+      // campo legenda (select + custom)
+      const gfsel = card.querySelector(`#gfsel-${idx}`);
+      const gfcustom = card.querySelector(`#gfcustom-${idx}`);
+      gfsel.onchange = async ()=>{
+        if(gfsel.value==="__custom"){ gfcustom.style.display="inline-block"; gfcustom.focus(); return; }
+        gfcustom.style.display="none";
+        const field = uiToFieldName(gfsel.value);
+        const ok = await fieldExists(entry.layer, field);
+        if(ok){ entry.groupField = field; applyPalette(entry); updateCardSwatches(entry); }
+        else{ log(`${entry.title}: campo "${field}" non presente (lasciato invariato)`,"err"); }
+      };
+      gfcustom.onchange = async ()=>{
+        const field = gfcustom.value.trim();
+        if(!field){ gfcustom.style.display="none"; return; }
+        const ok = await fieldExists(entry.layer, field);
+        if(ok){ entry.groupField = field; applyPalette(entry); updateCardSwatches(entry); }
+        else{ log(`${entry.title}: campo "${field}" non presente (lasciato invariato)`,"err"); }
+      };
+
+      // palette per-layer
+      const palSel = card.querySelector(`#palsel-${idx}`);
+      ACTIVE_PALETTE_NAMES.forEach(name=>{
+        const opt=document.createElement("option"); opt.value=name; opt.textContent=name;
+        if(entry.basePalette && entry.basePalette.name===name) opt.selected=true;
+        palSel.appendChild(opt);
+      });
+      palSel.onchange = ()=>{
+        entry.basePalette = PALETTES[palSel.value];
+        entry.override = null;
+        applyPalette(entry);
+        updateCardSwatches(entry);
+      };
+      if(!entry.basePalette && activePaletteName){
+        palSel.value = activePaletteName;
+      }
 
       // trasparenza
       const op = card.querySelector(`#op-${idx}`);
@@ -538,24 +610,13 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
     const k = LAYERS.indexOf(entry);
     const el = document.getElementById(`paletteSw-${k}`);
     if(!el) return;
-    if(!(entry.basePalette || activePaletteName)){
-      el.textContent="(nessuna palette assegnata)";
-      return;
-    }
-    const base = entry.basePalette || PALETTES[activePaletteName];
+    const base = entry.basePalette || (activePaletteName ? PALETTES[activePaletteName] : null);
+    if(!base){ el.textContent="(nessuna palette assegnata)"; return; }
     const pal = entry.override ? {colors:entry.override} : base;
-    const wrap=document.createElement("span");
-    for(let i=1;i<=20;i++){
-      const hex = pal.colors[String(i)];
-      const s=document.createElement("span");
-      s.title=`${i}:${hex}`;
-      s.style.cssText=`display:inline-block;width:10px;height:10px;border:1px solid #ccc;margin-left:2px;background:${hex};vertical-align:middle;border-radius:2px`;
-      wrap.appendChild(s);
-    }
-    el.innerHTML = `Palette: <strong>${(entry.basePalette||{name:activePaletteName}).name || activePaletteName}</strong> ${wrap.outerHTML}`;
+    el.innerHTML = `Palette: <strong>${base.name}</strong><br>${renderSwatches(pal.colors)}`;
   }
 
-  // Shuffle globale
+  // globale: shuffle
   document.getElementById("btnShuffleGlobal").onclick = ()=>{
     const vis = LAYERS.filter(e=>e.visible);
     if(!vis.length){ log("Nessun layer visibile","err"); return; }
@@ -563,24 +624,21 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
     refreshLayerCards();
   };
 
-  // Controllo globale campo legenda
+  // globale: campo legenda (Distrital/Nacional)
   document.getElementById("btnApplyGlobalField").onclick = async ()=>{
-    const sel = document.querySelector('input[name="globalField"]:checked')?.value || "group20";
+    const ui = document.querySelector('input[name="globalFieldUi"]:checked')?.value || "distrital";
+    const field = uiToFieldName(ui);
     const vis = LAYERS.filter(x=>x.visible);
     if(!vis.length){ log("Nessun layer visibile","err"); return; }
     for(const e of vis){
-      const ok = await fieldExists(e.layer, sel);
-      if(ok){
-        e.groupField = sel;
-        applyPalette(e);
-      }else{
-        log(`${e.title}: campo "${sel}" non presente (lasciato invariato)`,"err");
-      }
+      const ok = await fieldExists(e.layer, field);
+      if(ok){ e.groupField = field; applyPalette(e); }
+      else  { log(`${e.title}: campo "${field}" non presente (lasciato invariato)`,"err"); }
     }
     refreshLayerCards();
   };
 
-  // Applica palette attiva ai visibili (dal pannello)
+  // globale: applica palette attiva
   document.getElementById("btnApplyActivePalette").onclick = applyActivePaletteToVisible;
 
   async function fieldExists(layer, fname){
@@ -594,12 +652,11 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
     return false;
   }
 
-  // Server list
+  // server + palettes
   initServerList();
-  // Palette
   loadPalettes();
 
-  /* helper locali */
+  /* helpers */
   function initServerList(){
     serverWrap.innerHTML="";
     SERVER_LAYERS.forEach(name=>{
