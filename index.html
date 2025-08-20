@@ -294,16 +294,18 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
 
   // ====== RENDERER & APPLICAZIONE ======
   function buildRenderer(field, palette, override){
-    const infos=[];
-    for(let i=1;i<=20;i++){
-      const maxRank = 20;
-const invRank = maxRank - rank + 1;
-const hex = (override && (override[invRank])) || palette.colors[invRank];
-      infos.push({
-        value: Number(rank),
-        symbol: { type:"simple-fill", color: hex, outline:{ color:[0,0,0,0], width:0 } },
-        label:`Classe ${rank}`
-      });
+  const infos=[];
+  const maxRank = 20;
+  for(let i=1;i<=maxRank;i++){
+    const invRank = maxRank - i + 1; // inversione: classe grande -> colore 1
+    const hex = (override && override[String(invRank)]) 
+             || palette.colors[String(invRank)] 
+             || palette.colors[invRank];
+    infos.push({
+      value: i,
+      symbol: { type:"simple-fill", color: hex, outline:{ color:[0,0,0,0], width:0 } },
+      label: `Classe ${i}`
+    });
     }
     return {
       type:"unique-value",
