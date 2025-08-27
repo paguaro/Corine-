@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Palette Links Test</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    ul { list-style: none; padding: 0; }
+    li { margin: 8px 0; }
+    .links a {
+      margin-left: 8px;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .links a.google::after { content: "🔍"; }
+    .links a.wiki::after { content: "📖"; }
+  </style>
+</head>
+<body>
+  <h2>Lista Palette con Link</h2>
+  <ul id="palette-list"></ul>
+
+  <script>
+    // Carica il JSON con fetch
+    fetch("palettes_with_links.json")
+      .then(r => r.json())
+      .then(data => {
+        const ul = document.getElementById("palette-list");
+        data.palettes.forEach(p => {
+          const li = document.createElement("li");
+          li.innerHTML = `
+            <strong>${p.name}</strong>
+            <span class="links">
+              <a class="google" href="${p.links.google}" target="_blank" title="Google Images"></a>
+              <a class="wiki" href="${p.links.wikipedia}" target="_blank" title="Wikipedia"></a>
+            </span>
+          `;
+          ul.appendChild(li);
+        });
+      });
+  </script>
+</body>
+</html>
