@@ -1,42 +1,65 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
-  <meta charset="UTF-8">
-  <title>Palette Links Test</title>
+  <meta charset="UTF-8" />
+  <title>Palette Links Viewer</title>
   <style>
-    body { font-family: sans-serif; margin: 20px; }
+    body { font-family: Arial, sans-serif; margin: 20px; background: #fafafa; }
+    h2 { margin-bottom: 10px; }
+    #status { font-size: 14px; color: #444; margin-bottom: 10px; }
+    #status.error { color: #b00020; }
     ul { list-style: none; padding: 0; }
-    li { margin: 8px 0; }
+    li { margin: 6px 0; padding: 4px 0; }
+    strong { margin-right: 10px; }
     .links a {
-      margin-left: 8px;
-      text-decoration: none;
-      font-size: 14px;
+      margin-left: 6px; text-decoration: none; font-size: 16px; opacity: .75;
     }
-    .links a.google::after { content: "🔍"; }
-    .links a.wiki::after { content: "📖"; }
+    .links a:hover { opacity: 1; }
+    .links a.google::after   { content: "🔍"; }
+    .links a.wiki::after     { content: "📖"; }
+    .links a.arts::after     { content: "🏛"; }
+    .links a.wikiart::after  { content: "🎨"; }
   </style>
 </head>
 <body>
   <h2>Lista Palette con Link</h2>
+  <div id="status">Caricamento…</div>
   <ul id="palette-list"></ul>
 
   <script>
-    // Carica il JSON con fetch
-    fetch("palettes_from_tbw.json")
-      .then(r => r.json())
-      .then(data => {
-        const ul = document.getElementById("palette-list");
-        data.palettes.forEach(p => {
-          const li = document.createElement("li");
-          li.innerHTML = `
-            <strong>${p.name}</strong>
-            <span class="links">
-              <a class="google" href="${p.links.google}" target="_blank" title="Google Images"></a>
-              <a class="wiki" href="${p.links.wikipedia}" target="_blank" title="Wikipedia"></a>
-            </span>
-          `;
-          ul.appendChild(li);
-        });
+    const JSON_URL = "palette_from_tbw.json"; // deve stare nella stessa cartella
+
+    const statusEl = document.getElementById("status");
+    const listEl   = document.getElementById("palette-list");
+
+    function render(data) {
+      listEl.innerHTML = "";
+      for (var i=0; i<data.palettes.length; i++) {
+        var p = data.palettes[i];
+        var li = document.createElement("li");
+        li.innerHTML =
+          "<strong>" + p.name + "</strong>" +
+          "<span class='links'>" +
+            "<a class='google' href='"  + p.links.google_images        + "' target='_blank' title='Google Images'></a>" +
+            "<a class='wiki' href='"    + p.links.wikipedia            + "' target='_blank' title='Wikipedia'></a>" +
+            "<a class='arts' href='"    + p.links.google_arts_culture  + "' target='_blank' title='Google Arts & Culture'></a>" +
+            "<a class='wikiart' href='" + p.links.wikiart              + "' target='_blank' title='WikiArt'></a>" +
+          "</span>";
+        listEl.appendChild(li);
+      }
+      statusEl.textContent = "Caricate " + data.palettes.length + " palette.";
+      statusEl.classList.remove("error");
+    }
+
+    fetch(JSON_URL, { cache: "no-store" })
+      .then(function(res){
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(render)
+      .catch(function(err){
+        statusEl.textContent = "Errore caricamento JSON: " + err.message;
+        statusEl.classList.add("error");
       });
   </script>
 </body>
