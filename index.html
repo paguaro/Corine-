@@ -5,14 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Corine — Layer, Palette & Presenter</title>
 
+<!-- ArcGIS SDK -->
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
 <script src="https://js.arcgis.com/4.33/"></script>
-
-<!-- TopoJSON client (ESM) -->
-<script type="module">
-  import * as topojson from "https://cdn.jsdelivr.net/npm/topojson-client@3/+esm";
-  window.topojsonClient = topojson;
-</script>
 
 <style>
   :root{
@@ -22,8 +17,7 @@
   html,body,#viewDiv{height:100%;margin:0}
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
   #viewDiv{position:absolute;inset:0}
-
-  /* MapView: colore di fondo gestito da JS (giorno/notte) */
+  /* mappa trasparente: colore gestito da JS con giorno/notte */
   .esri-view .esri-view-surface{ background-color:transparent; }
 
   /* Pannello sinistro */
@@ -77,13 +71,13 @@
   .sw10{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin-top:6px}
   .sw{height:16px;border-radius:3px;border:1px solid #ddd}
 
-  /* Dock centrale: sfondo/slideshow/shuffle/export/settings/link */
+  /* Dock centrale (footer) */
   .dockC{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;z-index:40;display:flex;gap:8px}
   .pill{border:none;border-radius:999px;padding:10px 14px;background:var(--btn);box-shadow:var(--shadow);cursor:pointer}
   .pill:hover{background:var(--btnh)}
   .esri-ui-bottom-right{margin:12px}
 
-  /* Pannello impostazioni slideshow (compatto) */
+  /* Pannello impostazioni slideshow */
   #ssPanel{
     position:absolute;left:50%;transform:translateX(-50%);
     bottom:64px;z-index:41;min-width:330px;max-width:92vw;
@@ -96,7 +90,7 @@
   #ssPanel input[type=range]{flex:1}
   #ssPanel span.val{min-width:90px;text-align:right;font-size:12px;color:#333}
 
-  /* Toast leggero :) */
+  /* Toast */
   #toast{
     position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
     background:#333;color:#fff;padding:6px 14px;border-radius:20px;font-size:13px;
@@ -113,10 +107,8 @@
 <body>
   <div id="viewDiv"></div>
 
-  <!-- Toggle pannello sinistro -->
+  <!-- Toggle pannelli -->
   <button id="panelToggle" title="Mostra/Nascondi pannello">☰</button>
-
-  <!-- Toggle palette -->
   <button id="palToggle" title="Palette">🎨 Palette</button>
 
   <!-- Pannello sinistro -->
@@ -160,6 +152,7 @@
     <button id="btnExport" class="pill" title="Esporta PNG">📸</button>
     <button id="btnSSSettings" class="pill" title="Impostazioni slideshow">⚙️</button>
     <button id="btnCopyLink" class="pill" title="Copia link presentazione">📤</button>
+    <button id="btnExportPreset" class="pill" title="Esporta preset (file)">💾</button>
   </div>
 
   <!-- Pannello impostazioni slideshow -->
@@ -206,7 +199,7 @@
   <div id="toast">Link copiato!</div>
 
 <script>
-/* ===== Config ===== */
+/* ==================== Config ==================== */
 const SERVER_ITEMS = [
   {label:"AVEIRO", path:"AVEIRO.topojson"},
   {label:"BEJA", path:"BEJA.topojson"},
@@ -230,15 +223,15 @@ const SERVER_ITEMS = [
 ];
 const DEFAULT_PALETTE_URL = "./palette_from_tbw.json";
 
-/* ===== Stato ===== */
+/* ==================== Stato ==================== */
 let map, view;
 let PALETTES = {}, PALETTE_NAMES = [];
 const LAYERS = [];               // {layer,title,groupField,paletteName,opacity,override,visible,fields,path}
 const NAME_TO_ENTRY = new Map(); // key: path
 const PALETTE_PERM = new Map();
-let showTimer = null;            // setTimeout variabile (slideshow)
+let showTimer = null;            // setTimeout per slideshow
 let bgMode = "map";
-let SHUFFLE_TICK = 0;            // varia il seed a ogni shuffle
+let SHUFFLE_TICK = 0;
 let palettesReadyResolve;
 const palettesReady = new Promise(res => palettesReadyResolve = res);
 
@@ -252,7 +245,7 @@ let SS_SETTINGS = {
   randZone: true
 };
 
-/* ===== Utils ===== */
+/* ==================== Utils ==================== */
 function randBetween(a,b){ const lo=Math.min(a,b), hi=Math.max(a,b); return lo + Math.random()*(hi-lo); }
 function parseQS(){
   const out={}; const q=location.search.slice(1).split("&").filter(Boolean);
@@ -261,7 +254,6 @@ function parseQS(){
 }
 function uid(){ return (Date.now().toString(36)+Math.random().toString(36).slice(2)); }
 function clamp(v,lo,hi){ return Math.max(lo, Math.min(hi, v|0)); }
-
 function showToast(msg){
   const t=document.getElementById("toast");
   t.textContent=msg;
@@ -269,7 +261,94 @@ function showToast(msg){
   setTimeout(()=>t.classList.remove("show"),2000);
 }
 
-/* ===== ArcGIS ===== */
+/* ==================== Loader sandbox per librerie NON ArcGIS ==================== */
+async function loadScriptSandboxed(src){
+  return new Promise((resolve,reject)=>{
+    const oldDefine = window.define;              // disattiva AMD
+    try{ window.define = undefined; }catch(_){ }
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = () => { try{ window.define = oldDefine; }catch(_){ } resolve(); };
+    s.onerror = () => { try{ window.define = oldDefine; }catch(_){ } reject(new Error("Errore caricando "+src)); };
+    document.head.appendChild(s);
+  });
+}
+/* LZ-String on-demand */
+let lzReady=null;
+function ensureLZ(){
+  if(window.LZString) return Promise.resolve();
+  if(lzReady) return lzReady;
+  lzReady = loadScriptSandboxed("https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js");
+  return lzReady;
+}
+/* TopoJSON on-demand */
+let topoReady = null;
+function ensureTopoClient(){
+  if(window.topojsonClient) return Promise.resolve();
+  if(topoReady) return topoReady;
+  topoReady = loadScriptSandboxed("https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js")
+    .then(()=>{ window.topojsonClient = window.topojson; });
+  return topoReady;
+}
+
+/* ==================== Random zona robusto ==================== */
+let LAST_TARGET = null;
+function extentWidth(ext){ return Math.abs(ext.xmax - ext.xmin); }
+function extentHeight(ext){ return Math.abs(ext.ymax - ext.ymin); }
+function randInRange(min, max){ return min + Math.random()*(max-min); }
+function randomPointIn(ext){
+  return { x: randInRange(ext.xmin, ext.xmax), y: randInRange(ext.ymin, ext.ymax), spatialReference: ext.spatialReference };
+}
+function randomSubExtent(ext, fracMin=0.35, fracMax=0.75){
+  const fx = randInRange(fracMin, fracMax);
+  const fy = randInRange(fracMin, fracMax);
+  const w = extentWidth(ext)  * fx;
+  const h = extentHeight(ext) * fy;
+  const xmin = randInRange(ext.xmin, ext.xmax - w);
+  const ymin = randInRange(ext.ymin, ext.ymax - h);
+  return { xmin, ymin, xmax:xmin+w, ymax:ymin+h, spatialReference: ext.spatialReference };
+}
+function dist2(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return dx*dx+dy*dy; }
+
+/** centro feature random su layer visibile */
+async function randomFeatureCenter(){
+  const vis = LAYERS.filter(e=>e.layer.visible);
+  if(!vis.length) return null;
+  const target = vis[ Math.floor(Math.random()*vis.length) ].layer;
+  try{
+    const total = await target.queryFeatureCount(); if(!total) return null;
+    const start = Math.floor(Math.random()*total);
+    const q = target.createQuery(); q.outFields=["*"]; q.returnGeometry=true; q.num=1; q.start=start;
+    const r = await target.queryFeatures(q);
+    const f = r.features && r.features[0]; if(!f || !f.geometry) return null;
+    const g = f.geometry;
+    if(g.extent) return { x:(g.extent.xmin+g.extent.xmax)/2, y:(g.extent.ymin+g.extent.ymax)/2, sr:g.spatialReference };
+    if(g.centroid) return { x:g.centroid.x, y:g.centroid.y, sr:g.spatialReference };
+  }catch(_){}
+  return null;
+}
+
+/** target random con anti-stallo (garantisce variazione area) */
+async function pickRandomTarget(visibleUnionExtent){
+  let p = await randomFeatureCenter();
+  if(!p){
+    const sub = randomSubExtent(visibleUnionExtent);
+    const rp  = randomPointIn(sub);
+    p = { x: rp.x, y: rp.y, sr: rp.spatialReference || visibleUnionExtent.spatialReference };
+  }
+  const THRESH2 = (extentWidth(visibleUnionExtent)*0.08)**2 + (extentHeight(visibleUnionExtent)*0.08)**2;
+  let guard = 0;
+  while(LAST_TARGET && dist2(p, LAST_TARGET) < THRESH2 && guard < 8){
+    const sub = randomSubExtent(visibleUnionExtent, 0.25, 0.6);
+    const rp  = randomPointIn(sub);
+    p = { x: rp.x, y: rp.y, sr: p.sr };
+    guard++;
+  }
+  LAST_TARGET = p;
+  return p;
+}
+
+/* ==================== ArcGIS bootstrap ==================== */
 require([
   "esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer",
   "esri/widgets/BasemapGallery","esri/widgets/Expand","esri/Basemap"
@@ -277,26 +356,20 @@ require([
 
   map = new EsriMap({ basemap:"gray-vector" });
   view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:7 });
-
-  // Sposto i controlli zoom in alto-destra
   view.ui.move("zoom","top-right");
 
-  // BasemapGallery in basso-destra, dentro Expand (auto-hide)
+  /* Basemap Gallery bottom-right + auto-hide dopo scelta */
   const gallery = new BasemapGallery({ view });
   const galleryExpand = new Expand({ view, content: gallery, expanded:false, expandIcon:"basemap", group:"br" });
   view.ui.add(galleryExpand, "bottom-right");
   gallery.watch("activeBasemap", () => { if (galleryExpand.expanded) galleryExpand.collapse(); });
   view.on("key-down", (e)=>{ if(e.key==="Escape" && galleryExpand.expanded) galleryExpand.collapse(); });
 
-  // Toggle pannelli
-  document.getElementById("panelToggle").onclick = () => {
-    document.getElementById("panel").classList.toggle("collapsed");
-  };
-  document.getElementById("palToggle").onclick = () => {
-    document.getElementById("palSidebar").classList.toggle("collapsed");
-  };
+  /* Pannelli toggle */
+  document.getElementById("panelToggle").onclick = () => document.getElementById("panel").classList.toggle("collapsed");
+  document.getElementById("palToggle").onclick   = () => document.getElementById("palSidebar").classList.toggle("collapsed");
 
-  // ===== Palette: drag + close =====
+  /* Palette sidebar drag */
   const palSidebar = document.getElementById("palSidebar");
   const palHeader  = document.getElementById("palHeader");
   const palClose   = document.getElementById("palClose");
@@ -306,53 +379,45 @@ require([
     dragging=true; offX=ev.clientX-palSidebar.offsetLeft; offY=ev.clientY-palSidebar.offsetTop;
     document.onmousemove = (e)=>{
       if(!dragging) return;
-      const w = palSidebar.offsetWidth, h = palSidebar.offsetHeight;
-      const maxX = window.innerWidth - 12 - w;
-      const maxY = window.innerHeight - 12 - h;
-      let nx = Math.min(Math.max(12, e.clientX-offX), maxX);
-      let ny = Math.min(Math.max(12, e.clientY-offY), maxY);
-      palSidebar.style.left = nx+"px";
-      palSidebar.style.top  = ny+"px";
+      const w=palSidebar.offsetWidth,h=palSidebar.offsetHeight;
+      const maxX=window.innerWidth-12-w, maxY=window.innerHeight-12-h;
+      let nx=Math.min(Math.max(12,e.clientX-offX),maxX);
+      let ny=Math.min(Math.max(12,e.clientY-offY),maxY);
+      palSidebar.style.left=nx+"px"; palSidebar.style.top=ny+"px";
       palSidebar.style.right="auto"; palSidebar.style.bottom="auto";
-      palSidebar.style.maxHeight = (window.innerHeight - ny - 24) + "px";
+      palSidebar.style.maxHeight=(window.innerHeight-ny-24)+"px";
     };
     document.onmouseup = ()=>{ dragging=false; document.onmousemove=null; };
   };
 
-  // ===== Export PNG
+  /* Export PNG */
   document.getElementById("btnExport").onclick = async function(){
     try{
       const shot = await view.takeScreenshot({ format:"png", quality:100 });
-      const a = document.createElement("a");
-      a.href = shot.dataUrl;
-      a.download = "map_"+new Date().toISOString().replace(/[:.]/g,"-")+".png";
-      a.click();
+      const a = document.createElement("a"); a.href = shot.dataUrl;
+      a.download = "map_"+new Date().toISOString().replace(/[:.]/g,"-")+".png"; a.click();
     }catch(e){ console.error(e); }
   };
 
-  // ===== Sfondo giorno/notte
+  /* Giorno/Notte + colore sfondo */
   function setCanvasBg(hex){
     const viewDiv = document.getElementById("viewDiv");
-    if (viewDiv) viewDiv.style.backgroundColor = hex;
+    if(viewDiv) viewDiv.style.backgroundColor = hex;
     const surf = view && view.container ? view.container.querySelector(".esri-view-surface") : null;
-    if (surf) surf.style.backgroundColor = hex;
+    if(surf) surf.style.backgroundColor = hex;
   }
   document.getElementById("btnDayNight").onclick = function(){
     if(bgMode==="map"){
-      map.basemap = new Basemap({ baseLayers: [] });
-      bgMode="blank";
+      map.basemap = new Basemap({ baseLayers: [] }); bgMode="blank";
       setCanvasBg(document.getElementById("bgColor").value);
     }else{
-      map.basemap = "gray-vector";
-      bgMode="map";
+      map.basemap = "gray-vector"; bgMode="map";
       setCanvasBg("transparent");
     }
   };
-  document.getElementById("bgColor").oninput = function(){
-    if(bgMode==="blank") setCanvasBg(this.value);
-  };
+  document.getElementById("bgColor").oninput = function(){ if(bgMode==="blank") setCanvasBg(this.value); };
 
-  /* ======== Slideshow / Presenter ======== */
+  /* ===== Slideshow / Presenter ===== */
   const ssPanel     = document.getElementById("ssPanel");
   const btnSS       = document.getElementById("btnSSSettings");
   const ssNewWin    = document.getElementById("ssNewWin");
@@ -368,29 +433,6 @@ require([
   const ssIntMaxVal   = document.getElementById("ssIntMaxVal");
   const ssScaleMinVal = document.getElementById("ssScaleMinVal");
   const ssScaleMaxVal = document.getElementById("ssScaleMaxVal");
-
-  btnSS.onclick = ()=>{ syncSsUI(); ssPanel.classList.toggle("show"); };
-  ssCancel.onclick = ()=> ssPanel.classList.remove("show");
-  ssStart.onclick = ()=>{
-    readSsUI(); ssPanel.classList.remove("show");
-    if(SS_SETTINGS.newWin){
-      // Salva stato in localStorage e apri presenter in nuova finestra
-      const state = snapshotState();
-      const sid = "corine_state_"+uid();
-      try{ localStorage.setItem(sid, JSON.stringify(state)); }catch(e){ console.warn("localStorage pieno o bloccato:", e); }
-      const url = new URL(location.href);
-      url.searchParams.set("present","1");
-      url.searchParams.set("sid", sid);
-      url.searchParams.set("intMin",SS_SETTINGS.intMin);
-      url.searchParams.set("intMax",SS_SETTINGS.intMax);
-      url.searchParams.set("scaleMin",SS_SETTINGS.scaleMin);
-      url.searchParams.set("scaleMax",SS_SETTINGS.scaleMax);
-      url.searchParams.set("randZone",SS_SETTINGS.randZone ? "1":"0");
-      window.open(url.toString(),"presenter","noopener,noreferrer");
-    }else{
-      startPresenterLocal();
-    }
-  };
 
   function syncSsUI(){
     ssNewWin.checked   = SS_SETTINGS.newWin;
@@ -418,26 +460,34 @@ require([
     ssScaleMinVal.textContent = Math.round(SS_SETTINGS.scaleMin/1000) + "k";
     ssScaleMaxVal.textContent = Math.round(SS_SETTINGS.scaleMax/1000) + "k";
   }
-  ssIntMin.oninput   = readSsUI;
-  ssIntMax.oninput   = readSsUI;
-  ssScaleMin.oninput = readSsUI;
-  ssScaleMax.oninput = readSsUI;
-  ssRandZone.oninput = readSsUI;
+  btnSS.onclick = ()=>{ syncSsUI(); ssPanel.classList.toggle("show"); };
+  ssCancel.onclick = ()=> ssPanel.classList.remove("show");
+  ssStart.onclick = ()=>{
+    readSsUI(); ssPanel.classList.remove("show");
+    if(SS_SETTINGS.newWin){
+      const state = snapshotState();
+      const sid = "corine_state_"+uid();
+      try{ localStorage.setItem(sid, JSON.stringify(state)); }catch(e){ console.warn("localStorage:", e); }
+      const url = new URL(location.href);
+      url.searchParams.set("present","1");
+      url.searchParams.set("sid", sid);
+      url.searchParams.set("intMin",SS_SETTINGS.intMin);
+      url.searchParams.set("intMax",SS_SETTINGS.intMax);
+      url.searchParams.set("scaleMin",SS_SETTINGS.scaleMin);
+      url.searchParams.set("scaleMax",SS_SETTINGS.scaleMax);
+      url.searchParams.set("randZone",SS_SETTINGS.randZone ? "1":"0");
+      window.open(url.toString(),"presenter","noopener,noreferrer");
+    }else{
+      startPresenterLocal();
+    }
+  };
 
-  // Toggle rapido (🎞️) — ON/OFF locale
   document.getElementById("btnShow").onclick = function(){
     if(showTimer){ stopPresenterLocal(); this.textContent="🎞️"; return; }
     startPresenterLocal(); this.textContent="⏹";
   };
-
-  function stopPresenterLocal(){
-    if(showTimer){ clearTimeout(showTimer); showTimer=null; }
-    document.getElementById("btnShow").textContent="🎞️";
-  }
-  function startPresenterLocal(){
-    stopPresenterLocal();
-    doPresenterStep();
-  }
+  function stopPresenterLocal(){ if(showTimer){ clearTimeout(showTimer); showTimer=null; } document.getElementById("btnShow").textContent="🎞️"; }
+  function startPresenterLocal(){ stopPresenterLocal(); doPresenterStep(); }
   async function doPresenterStep(){
     SHUFFLE_TICK++;
     PALETTE_PERM.clear();
@@ -446,34 +496,29 @@ require([
 
     const ext = await unionVisibleExtent();
     if(ext){
-      let x, y;
+      let center;
       if(SS_SETTINGS.randZone){
-        x = ext.xmin + Math.random()*(ext.xmax - ext.xmin);
-        y = ext.ymin + Math.random()*(ext.ymax - ext.ymin);
+        center = await pickRandomTarget(ext);
       }else{
-        x = (ext.xmin+ext.xmax)/2;
-        y = (ext.ymin+ext.ymax)/2;
+        center = { x:(ext.xmin+ext.xmax)/2, y:(ext.ymin+ext.ymax)/2, sr: ext.spatialReference };
       }
       const scale = randBetween(SS_SETTINGS.scaleMin, SS_SETTINGS.scaleMax);
-      view.goTo({ center:{x,y,spatialReference:ext.spatialReference}, scale }).catch(()=>{});
+      view.goTo({ center:{ x:center.x, y:center.y, spatialReference:center.sr }, scale }).catch(()=>{});
     }
-
     const delay = randBetween(SS_SETTINGS.intMin, SS_SETTINGS.intMax) * 1000;
     showTimer = setTimeout(doPresenterStep, delay);
   }
 
-  /* ====== Stato: snapshot / apply ====== */
+  /* ===== Stato: snapshot/apply ===== */
   function inferPathFromTitle(title){
-    // prova ad allineare nome file tra LABEL e PATH
     const cand = SERVER_ITEMS.find(it => {
-      const t = (title||"").toLowerCase().replace(/\W+/g,"");
-      const lbl = (it.label||"").toLowerCase().replace(/\W+/g,"");
-      const p = (it.path||"").toLowerCase().replace(/\.[^.]+$/,"").replace(/\W+/g,"");
+      const t=(title||"").toLowerCase().replace(/\W+/g,"");
+      const lbl=(it.label||"").toLowerCase().replace(/\W+/g,"");
+      const p=(it.path||"").toLowerCase().replace(/\.[^.]+$/,"").replace(/\W+/g,"");
       return t===lbl || t===p;
     });
     return cand ? cand.path : title + ".geojson";
   }
-
   function snapshotState(){
     return {
       bgMode,
@@ -490,55 +535,50 @@ require([
       }))
     };
   }
-
   async function applyState(state){
     if(!state) return;
-    // sfondo
     if(state.bgMode==="blank"){
-      map.basemap = new Basemap({ baseLayers: [] });
-      bgMode="blank";
-      setCanvasBg(state.bgColor || "#000000");
+      map.basemap = new Basemap({ baseLayers: [] }); bgMode="blank";
+      (state.bgColor) && setCanvasBg(state.bgColor);
     }
-    // slideshow settings
     if(state.ss){ SS_SETTINGS = { ...SS_SETTINGS, ...state.ss }; }
-    // carica layer in sequenza
     for(const li of (state.layers||[])){
       try{
         await ensure(li.path);
         const entry = LAYERS.find(e => (e.path||"")===li.path || e.title===li.title);
         if(!entry) continue;
-        entry.visible = !!li.visible;
-        entry.layer.visible = !!li.visible;
+        entry.visible = !!li.visible; entry.layer.visible = !!li.visible;
         entry.groupField = li.groupField || entry.groupField;
         entry.paletteName= li.paletteName || entry.paletteName;
-        entry.opacity = li.opacity ?? 1;
-        entry.override = li.override || null;
+        entry.opacity = li.opacity ?? 1; entry.override = li.override || null;
         applyPalette(entry);
       }catch(err){ console.warn("applyState layer fallito:", li.path, err.message); }
     }
     refreshLayerCards();
   }
 
-  // Avvio automatico modalità Presenter via URL (+ stato da sid o state)
   (async function bootFromURL(){
     const qs = parseQS();
-    // attendo palette
-    await (new Promise(res => setTimeout(res, 0))); // microtask
-    // stato da localStorage o da param
+    await palettesReady;
+
     let imported = null;
-    if(qs.sid){
-      try{ const raw = localStorage.getItem(qs.sid); if(raw){ imported = JSON.parse(raw); } }
-      catch(e){ console.warn("sid invalido:", e); }
-    }else if(qs.state){
-      try{ imported = JSON.parse(decodeURIComponent(qs.state)); }
-      catch(e){ console.warn("state invalido:", e); }
+    if(qs.p){
+      try{ const r=await fetch(qs.p,{cache:"no-store"}); if(r.ok) imported=await r.json(); }catch(e){ console.warn("Preset non caricato:", e); }
+    }
+    if(!imported && qs.sid){
+      try{ const raw=localStorage.getItem(qs.sid); if(raw) imported=JSON.parse(raw); }catch(e){ console.warn("sid invalido:", e); }
+    }
+    if(!imported && qs.statez){
+      try{ await ensureLZ(); imported = JSON.parse(LZString.decompressFromEncodedURIComponent(qs.statez)); }catch(e){ console.warn("statez invalido"); }
+    }
+    if(!imported && qs.state){
+      try{ imported = JSON.parse(decodeURIComponent(qs.state)); }catch(e){ console.warn("state invalido"); }
     }
 
     if(qs.present==="1"){
       document.getElementById("panel").classList.add("collapsed");
       document.getElementById("palSidebar").classList.add("collapsed");
 
-      // parametri slideshow da URL (priorità su importato)
       if(qs.intMin)  SS_SETTINGS.intMin   = Math.max(5, parseInt(qs.intMin,10));
       if(qs.intMax)  SS_SETTINGS.intMax   = Math.max(SS_SETTINGS.intMin, parseInt(qs.intMax,10));
       if(qs.scaleMin)SS_SETTINGS.scaleMin = Math.max(5000, parseInt(qs.scaleMin,10));
@@ -547,34 +587,46 @@ require([
 
       if(imported){ await applyState(imported); }
       startPresenterLocal();
-      const b = document.getElementById("btnShow"); if(b) b.textContent="⏹";
+      const b=document.getElementById("btnShow"); if(b) b.textContent="⏹";
     }
   })();
 
-  // ====== Dock: copia link Presenter (📤) ======
+  /* ===== Link presentazione (📤) con fallback locale ===== */
   document.getElementById("btnCopyLink").onclick = async function(){
-    const state = snapshotState();
-    const enc   = encodeURIComponent(JSON.stringify(state));
-    const url   = new URL(location.href.split("?")[0]); // base senza query
-    url.searchParams.set("present","1");
-    url.searchParams.set("state",enc);
-    try{
-      await navigator.clipboard.writeText(url.toString());
-      showToast("✅ Link copiato!");
-    }catch(e){
-      console.warn("Clipboard non disponibile", e);
-      prompt("Copia manualmente:", url.toString());
+    const hasUnshareable = LAYERS.some(e => !e.path || (typeof e.path === "string" && e.path.startsWith("blob:")));
+    const url = new URL(location.href.split("?")[0]);
+
+    if(hasUnshareable){
+      const state = snapshotState();
+      const sid = "corine_state_"+uid();
+      try{ localStorage.setItem(sid, JSON.stringify(state)); }catch(_){}
+      url.searchParams.set("present","1");
+      url.searchParams.set("sid", sid);
+      try{ await navigator.clipboard.writeText(url.toString()); showToast("✅ Link (locale) copiato!"); }
+      catch(e){ prompt("Copia manualmente:", url.toString()); }
+      return;
     }
+
+    await ensureLZ();
+    const state = snapshotState();
+    const enc   = LZString.compressToEncodedURIComponent(JSON.stringify(state));
+    url.searchParams.set("present","1");
+    url.searchParams.set("statez", enc);
+    try{ await navigator.clipboard.writeText(url.toString()); showToast("✅ Link copiato!"); }
+    catch(e){ prompt("Copia manualmente:", url.toString()); }
   };
 
-  // ====== Shuffle globale (pulsante 🎲) ======
-  document.getElementById("btnShuffleGlobal").onclick = doGlobalShuffle;
-  function doGlobalShuffle(){
-    SHUFFLE_TICK++;
-    PALETTE_PERM.clear();
-    LAYERS.filter(e=>e.layer.visible).forEach(e=> shuffleColors(e, true, SHUFFLE_TICK));
-    refreshLayerCards();
-  }
+  /* ===== Preset (💾) ===== */
+  document.getElementById("btnExportPreset").onclick = function(){
+    const state = snapshotState();
+    const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "preset.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast("💾 preset esportato");
+  };
 
   /* ===== Server list ===== */
   initServerList();
@@ -597,6 +649,7 @@ require([
         if(isPaletteObject(obj)){ mergePalettes(obj); buildPaletteGallery(); continue; }
         const base = f.name.replace(/\.[^.]+$/,"");
         if(obj.type==="Topology"){
+          await ensureTopoClient();
           const names = Object.keys(obj.objects||{}); if(!names.length) continue;
           let pick = names[0], maxn=0;
           for(const n of names){ const g=obj.objects[n]; const cnt=(g && g.geometries||[]).length; if(cnt>maxn){maxn=cnt; pick=n;} }
@@ -610,7 +663,7 @@ require([
     ev.target.value = "";
   });
 
-  /* ===== Helpers ===== */
+  /* ===== Helpers layer ===== */
   async function ensure(path){
     const existing = NAME_TO_ENTRY.get(path);
     if(existing){ existing.visible=true; existing.layer.visible=true; refreshLayerCards(); return; }
@@ -647,6 +700,7 @@ require([
       if(!resp.ok) throw new Error("HTTP "+resp.status);
       const obj = JSON.parse(await resp.text());
       if(obj.type==="Topology"){
+        await ensureTopoClient();
         const names = Object.keys(obj.objects||{}); if(!names.length) throw new Error("TopoJSON senza objects");
         let pick = names[0], maxn=0;
         for(const n of names){ const g=obj.objects[n]; const cnt=(g && g.geometries||[]).length; if(cnt>maxn){maxn=cnt; pick=n;} }
@@ -671,9 +725,9 @@ require([
 
     layer.when(async function(){
       entry.fields = await sampleFields(layer);
-      entry.groupField = pickBestField(entry.fields);          // legenda di default
-      entry.paletteName = PALETTE_NAMES[0] || null;            // palette di default
-      applyPalette(entry);                                     // renderer applicato
+      entry.groupField = pickBestField(entry.fields);
+      entry.paletteName = PALETTE_NAMES[0] || null;
+      applyPalette(entry);
       refreshLayerCards();
       try{ const ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch(e){}
     });
@@ -696,7 +750,7 @@ require([
   function buildRenderer(field, palette, override){
     const infos = [];
     for(let i=1;i<=20;i++){
-      const inv = 21 - i; // mappa 1..20 -> 20..1 (come da tua logica)
+      const inv = 21 - i; // mappa 1..20 -> 20..1
       const hex = (override && override[String(inv)]) || (palette && palette.colors[String(inv)]) || "#cccccc";
       infos.push({ value:i, symbol:{ type:"simple-fill", color:hex, outline:{color:[0,0,0,0], width:0} }, label:"Classe "+i });
     }
@@ -752,7 +806,6 @@ require([
     host.appendChild(frag);
   }
 
-  /* layer cards (UI per ogni layer) */
   const layersWrap = document.getElementById("layersWrap");
   function refreshLayerCards(){
     layersWrap.innerHTML = "";
@@ -808,7 +861,7 @@ require([
     pref.forEach(p=>{ if(set.has(p)) out.push(p); }); arr.forEach(k=>{ if(!out.includes(k)) out.push(k); }); return out;
   }
 
-  /* ===== Palette gallery ===== */
+  /* ===== Palette ===== */
   function buildPaletteGallery(){
     const host=document.getElementById("palGallery"); host.innerHTML="";
     PALETTE_NAMES.forEach(name=>{
@@ -832,7 +885,7 @@ require([
 
       card.appendChild(top); card.appendChild(r1); card.appendChild(r2);
 
-      // click: applica a layer selezionati (Sel) o, se nessuno selezionato, ai visibili
+      // Applica ai layer selezionati (“Sel”) o, se nessuno, a tutti i visibili
       card.onclick = function(){
         const targets = LAYERS.filter((e,idx)=>{ const c=document.getElementById("sel-"+idx); return c && c.checked; });
         const dest = targets.length ? targets : LAYERS.filter(e=>e.visible);
@@ -843,7 +896,7 @@ require([
     });
   }
 
-  /* ===== Palette default ===== */
+  /* Palette default */
   (async function(){
     try{
       const r = await fetch(DEFAULT_PALETTE_URL,{cache:"no-store"});
@@ -877,6 +930,7 @@ require([
     PALETTES=out; PALETTE_NAMES=Object.keys(out).sort();
   }
 
+  /* Extent unito dei layer visibili */
   async function unionVisibleExtent(){
     const vis = LAYERS.filter(e=>e.layer.visible);
     if(!vis.length) return null;
@@ -889,7 +943,6 @@ require([
   }
 
 }); // end require
-
 </script>
 </body>
 </html>
