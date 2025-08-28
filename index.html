@@ -5,11 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Corine – distretti & palette</title>
 
-<!-- ArcGIS JS API -->
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
 <script src="https://js.arcgis.com/4.33/"></script>
 
-<!-- TopoJSON come ES Module (evita multipleDefine con Dojo) -->
+<!-- TopoJSON come ES Module -->
 <script type="module">
   import * as topojson from "https://cdn.jsdelivr.net/npm/topojson-client@3/+esm";
   window.topojsonClient = topojson;
@@ -19,9 +18,9 @@
   html,body,#viewDiv{height:100%;margin:0}
   body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
 
-  /* pannello layer (raccoglibile) */
+  /* ===== Pannello layer (sinistra) ===== */
   #panel{position:absolute;top:10px;left:10px;z-index:20;background:#fff;padding:12px;border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.2);font-size:14px;max-width:540px;max-height:92%;overflow:auto}
+    box-shadow:0 6px 18px rgba(0,0,0,.2);font-size:14px;max-width:520px;max-height:92%;overflow:auto}
   #panel.collapsed{display:none}
   #panelToggle{position:absolute;top:10px;left:10px;z-index:21;border:none;border-radius:10px;background:#fff;
     box-shadow:0 6px 18px rgba(0,0,0,.2);width:40px;height:40px;cursor:pointer;font-size:18px}
@@ -41,36 +40,44 @@
   .srv-item{border:1px solid #e5e7eb;border-radius:10px;padding:8px;background:#fff;display:flex;align-items:center;gap:8px}
   .srv-name{font-weight:600;flex:1}
 
-  /* palette gallery (raccoglibile) */
+  /* ===== Pannello palette (destra) ===== */
   #palToggle{position:absolute;left:60px;top:10px;z-index:21;border:none;border-radius:10px;background:#fff;
     box-shadow:0 6px 18px rgba(0,0,0,.2);height:40px;padding:0 10px;cursor:pointer}
-  #palPanel{position:absolute;left:60px;top:60px;z-index:20;display:none;background:#fff;border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.25);padding:12px;max-height:65%;overflow:auto;min-width:420px}
-  .pal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  #palPanel{position:absolute;right:15px;top:60px;z-index:24;display:none;background:#fff;border-radius:12px;
+    box-shadow:0 6px 18px rgba(0,0,0,.25);padding:12px;max-height:70%;overflow:auto;min-width:460px}
+  .pal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px}
   .pal-item{border:1px solid #eee;border-radius:10px;padding:8px;margin-bottom:8px;cursor:pointer}
-  .pal-title{font-weight:600;margin-bottom:6px}
+  .pal-title{display:flex;align-items:center;gap:10px;font-weight:600;margin-bottom:6px}
+  .pal-links a{font-size:14px;text-decoration:none;opacity:.8;margin-left:6px}
+  .pal-links a:hover{opacity:1}
   .sw-row{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
   .sw{height:14px;border-radius:3px;border:1px solid #ddd}
 
-  /* export PNG (in basso a destra) */
+  /* Export PNG (in basso a destra) */
   #btnExport{position:absolute;right:15px;bottom:15px;z-index:26;border:none;border-radius:999px;padding:10px 14px;
     background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}
 
-  /* basemap picker */
+  /* Basemap picker */
   #bm-toggle{position:absolute;right:70px;bottom:15px;z-index:25;width:42px;height:42px;border-radius:999px;border:none;
     background:#ffffff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px}
   #bm-panel{position:absolute;right:70px;bottom:70px;z-index:24;display:none;background:#fff;border-radius:12px;
     box-shadow:0 6px 18px rgba(0,0,0,.25);padding:10px;min-width:220px}
   #bm-panel label{display:block;font-size:12px;color:#555;margin-bottom:4px}
 
-  /* shuffle globale */
+  /* Shuffle globale */
   #btnShuffleGlobal{position:absolute;left:15px;bottom:15px;z-index:26;border:none;border-radius:999px;padding:10px 14px;
     background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}
 
-  /* toast click info */
+  /* Toast click info */
   #toast{position:absolute;bottom:65px;left:15px;z-index:30;background:#111;color:#fff;border-radius:10px;padding:10px 12px;
     box-shadow:0 6px 18px rgba(0,0,0,.4);display:none;max-width:80%}
   #toast button{margin-left:8px;border:none;border-radius:8px;padding:4px 8px;cursor:pointer}
+
+  /* Miglior spacing su schermi stretti */
+  @media (max-width: 900px){
+    #panel{max-width:92%}
+    #palPanel{right:10px;left:10px;min-width:auto}
+  }
 </style>
 </head>
 <body>
@@ -101,7 +108,7 @@
 <!-- shuffle globale -->
 <button id="btnShuffleGlobal" title="Rimescola colori di tutti i layer visibili">🎲 Shuffle</button>
 
-<!-- pannello layer -->
+<!-- ===== Pannello layer (sinistra) ===== -->
 <div id="panel">
   <div class="row"><strong>Controlli globali</strong></div>
   <div class="row">
@@ -123,9 +130,10 @@
     <button id="btnLoadAll">Carica tutti</button>
     <span class="muted grow" style="text-align:right">oppure</span>
   </div>
+
   <div class="row">
-    <input id="fileInput" class="grow" type="file" accept=".topojson,.geojson" multiple>
-    <span class="muted">file locali</span>
+    <input id="fileInput" class="grow" type="file" accept=".topojson,.geojson,.json" multiple>
+    <span class="muted">carica GeoJSON/TopoJSON **o** palette JSON</span>
   </div>
 
   <hr>
@@ -137,554 +145,467 @@
   <div id="log"></div>
 </div>
 
-<!-- palette gallery -->
+<!-- ===== Pannello palette (destra) ===== -->
 <div id="palPanel"></div>
 
 <!-- toast -->
 <div id="toast"><span id="toastText"></span><button id="btnCopy">Copia</button></div>
 
 <script>
-/* ==========================
-   LAYER presenti sul server
-   (solo NOME base, senza .topojson)
-   ========================== */
-const SERVER_LAYERS = [
-  "AVEIRO","BEJA","BRAGA","BRAGANCA","CASTELO_BRANCO","COIMBRA","EVORA","FARO",
-  "GUARDA","LEIRIA","LISBOA","PORTALEGRE","PORTO","SANTAREM","SETUBAL",
-  "VIANA_DO_CASTELO","VILA_REAL","VISEU"
+/* =========== FILE server (ora con path espliciti) =========== */
+const SERVER_ITEMS = [
+  { label:"AVEIRO", path:"AVEIRO.topojson" },
+  { label:"BEJA", path:"BEJA.topojson" },
+  { label:"BRAGA", path:"BRAGA.topojson" },
+  { label:"BRAGANCA", path:"BRAGANCA.topojson" },
+  { label:"CASTELO_BRANCO", path:"CASTELO_BRANCO.topojson" },
+  { label:"COIMBRA", path:"COIMBRA.topojson" },
+  { label:"EVORA", path:"EVORA.topojson" },
+  { label:"FARO", path:"FARO.topojson" },
+  { label:"GUARDA", path:"GUARDA.topojson" },
+  { label:"LEIRIA", path:"LEIRIA.topojson" },
+  { label:"LISBOA", path:"LISBOA.topojson" },
+  /* Richiesta: Lisboa blocchi */
+  { label:"LISBOA_BLOCOS", path:"lisboa_blocos.json" },
+  { label:"PORTALEGRE", path:"PORTALEGRE.topojson" },
+  { label:"PORTO", path:"PORTO.topojson" },
+  { label:"SANTAREM", path:"SANTAREM.topojson" },
+  { label:"SETUBAL", path:"SETUBAL.topojson" },
+  { label:"VIANA_DO_CASTELO", path:"VIANA_DO_CASTELO.topojson" },
+  { label:"VILA_REAL", path:"VILA_REAL.topojson" },
+  { label:"VISEU", path:"VISEU.topojson" }
 ];
 
-/* ==========================
-   VARIABILI APP
-   ========================== */
-let PALETTES = {};              // nome -> {name, colors:{1..20:"#hex"}}
-let ACTIVE_PALETTE_NAMES = [];  // ordine nomi
-let activePaletteName = null;   // palette attiva (scelta dalla gallery)
-let activeLayerIndex = null;    // opzionale, non più necessario per applicare a tutti
+/* =========== VARIABILI APP =========== */
+let PALETTES = {};              // nome -> {name, colors:{1..20:"#hex"}, links?}
+let ACTIVE_PALETTE_NAMES = [];
+let activePaletteName = null;
 const LAYERS = [];              // [{layer,title,groupField,opacity,override,basePalette,visible}]
 let map, view;
 
-/* ==========================
-   MAPPA 2D
-   ========================== */
-require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,MapView,GeoJSONLayer)=>{
+/* =========== MAPPA 2D =========== */
+require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], function(EsriMap,MapView,GeoJSONLayer){
 
   map = new EsriMap({ basemap:"gray-vector" });
   view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:7 });
   view.ui.move("zoom","top-right");
 
-  // pannelli
-  const panel = document.getElementById("panel");
-  document.getElementById("panelToggle").onclick = ()=> panel.classList.toggle("collapsed");
+  /* Pannelli */
+  var panel = document.getElementById("panel");
+  document.getElementById("panelToggle").onclick = function(){ panel.classList.toggle("collapsed"); };
+  var palPanel = document.getElementById("palPanel");
+  document.getElementById("palToggle").onclick = function(){
+    palPanel.style.display = (palPanel.style.display==="block"?"none":"block");
+  };
 
-  const palPanel = document.getElementById("palPanel");
-  document.getElementById("palToggle").onclick = ()=> palPanel.style.display = (palPanel.style.display==="block"?"none":"block");
+  /* Basemap */
+  var btnBM = document.getElementById("bm-toggle");
+  var pnlBM = document.getElementById("bm-panel");
+  var selBM = document.getElementById("bm-select");
+  btnBM.onclick = function(){ pnlBM.style.display = (!pnlBM.style.display || pnlBM.style.display==="none")?"block":"none"; };
+  selBM.onchange = function(){ map.basemap = selBM.value; };
 
-  // basemap picker
-  const btnBM = document.getElementById("bm-toggle");
-  const pnlBM = document.getElementById("bm-panel");
-  const selBM = document.getElementById("bm-select");
-  btnBM.onclick = ()=> pnlBM.style.display = (pnlBM.style.display==="none" || !pnlBM.style.display) ? "block" : "none";
-  selBM.onchange = ()=>{ map.basemap = selBM.value; };
-
-  // export PNG
-  document.getElementById("btnExport").onclick = async ()=>{
+  /* Export PNG */
+  document.getElementById("btnExport").onclick = async function(){
     try{
-      const shot = await view.takeScreenshot({ format:"png", quality: 100 });
-      const a = document.createElement("a");
+      var shot = await view.takeScreenshot({ format:"png", quality: 100 });
+      var a = document.createElement("a");
       a.href = shot.dataUrl;
-      a.download = `map_${new Date().toISOString().replace(/[:.]/g,"-")}.png`;
+      a.download = "map_"+new Date().toISOString().replace(/[:.]/g,"-")+".png";
       a.click();
     }catch(e){ log("Errore export PNG: "+e.message,"err"); }
   };
 
-  // toast
-  const toast = document.getElementById("toast");
-  const toastText = document.getElementById("toastText");
-  document.getElementById("btnCopy").onclick = async ()=>{
+  /* Toast su click */
+  var toast = document.getElementById("toast");
+  var toastText = document.getElementById("toastText");
+  document.getElementById("btnCopy").onclick = async function(){
     try{ await navigator.clipboard.writeText(toastText.textContent||""); toast.style.display="none"; log("Copiato negli appunti","ok"); }
     catch(e){ log("Copy fallita","err"); }
   };
-  view.on("click", async (event)=>{
+  view.on("click", async function(event){
     try{
-      const hit = await view.hitTest(event);
-      const g = hit.results?.find(r=>r.graphic?.layer?.type==="geojson");
+      var hit = await view.hitTest(event);
+      var g = hit.results && hit.results.find(function(r){ return r.graphic && r.graphic.layer && r.graphic.layer.type==="geojson"; });
       if(!g){ toast.style.display="none"; return; }
-      const entry = LAYERS.find(x=>x.layer===g.graphic.layer);
+      var entry = LAYERS.find(function(x){ return x.layer===g.graphic.layer; });
       if(!entry){ toast.style.display="none"; return; }
-      const attrs = g.graphic.attributes || {};
-      const field = entry.groupField;
-      const val = attrs[field];
-      const rend = entry.layer.renderer;
-      let hex = "#000000";
-      if(rend?.uniqueValueInfos){
-        const it = rend.uniqueValueInfos.find(u=>String(u.value)==String(val));
-        if(it?.symbol?.color) hex = Array.isArray(it.symbol.color) ? rgbaToHex(it.symbol.color) : it.symbol.color;
+      var attrs = g.graphic.attributes || {};
+      var field = entry.groupField;
+      var val = attrs[field];
+      var rend = entry.layer.renderer;
+      var hex = "#000000";
+      if(rend && rend.uniqueValueInfos){
+        var it = rend.uniqueValueInfos.find(function(u){ return String(u.value)===String(val); });
+        if(it && it.symbol && it.symbol.color){
+          hex = Array.isArray(it.symbol.color) ? rgbaToHex(it.symbol.color) : it.symbol.color;
+        }
       }
-      toastText.textContent = `layer: ${entry.title} | ${field}=${val} | color=${hex}`;
+      toastText.textContent = "layer: "+entry.title+" | "+field+"="+val+" | color="+hex;
       toast.style.display = "inline-flex";
-    }catch{}
+    }catch(e){}
   });
-  function rgbaToHex(c){ const r=c[0]??0,g=c[1]??0,b=c[2]??0; return "#"+[r,g,b].map(x=>x.toString(16).padStart(2,"0")).join(""); }
+  function rgbaToHex(c){ var r=c[0]||0,g=c[1]||0,b=c[2]||0; return "#"+[r,g,b].map(function(x){return x.toString(16).padStart(2,"0");}).join(""); }
 
-  // LOG
-  const log = (msg,cls="")=>{
-    const div=document.getElementById("log");
-    const el=document.createElement("div"); if(cls) el.className=cls;
+  /* LOG */
+  function log(msg,cls){
+    var div=document.getElementById("log");
+    var el=document.createElement("div"); if(cls) el.className=cls;
     el.textContent=msg; div.appendChild(el); div.scrollTop=div.scrollHeight;
-    console[cls==="err"?"error":cls==="ok"?"log":"log"](msg);
-  };
+    if(cls==="err"){ console.error(msg); } else { console.log(msg); }
+  }
 
-  // ====== PALETTE ======
-  async function loadPalettes(){
+  /* ====== PALETTE ====== */
+  async function loadPalettesFromURL(url){
     try{
-      const r = await fetch("./palettes_from_twb.json",{cache:"no-store"});
-      if(!r.ok) throw new Error(`HTTP ${r.status}`);
-      const raw = await r.json();
-      const out = {};
-      const add = (name, colors)=>{
-        const norm={}; for(let i=1;i<=20;i++) norm[String(i)] = colors[String(i)] ?? colors[i];
-        if(Object.values(norm).some(v=>!v)) return;
-        out[name] = { name, colors:norm };
-      };
-      if(Array.isArray(raw?.palettes)){
-        raw.palettes.forEach(p=> add(p.name||"Senza nome", p.colors||{}));
-      }else{
-        Object.entries(raw||{}).forEach(([name,p])=> add(name, p?.colors||{}));
-      }
-      PALETTES = out; ACTIVE_PALETTE_NAMES = Object.keys(out);
-      activePaletteName = ACTIVE_PALETTE_NAMES[0] || null;
+      var r = await fetch(url,{cache:"no-store"});
+      if(!r.ok) throw new Error("HTTP "+r.status);
+      var raw = await r.json();
+      mergePalettes(raw);
       buildPaletteGallery();
       updateActivePalTag();
-      log(`Palette caricate: ${ACTIVE_PALETTE_NAMES.length}`,"ok");
+      log("Palette caricate da "+url+": "+ACTIVE_PALETTE_NAMES.length,"ok");
     }catch(e){
-      log("Impossibile caricare palettes_from_twb.json (nessuna palette disponibile)","err");
+      log("Impossibile caricare "+url+" (nessuna palette iniziale)","err");
     }
   }
+
+  function mergePalettes(raw){
+    var out = Object.assign({}, PALETTES);
+    function add(name, colors, links){
+      var norm={}; for(var i=1;i<=20;i++){ var k=String(i); norm[k] = colors[k] || colors[i]; }
+      if(Object.values(norm).some(function(v){return !v;})) return;
+      out[name] = { name:name, colors:norm, links: links || null };
+    }
+    if(Array.isArray(raw && raw.palettes)){
+      raw.palettes.forEach(function(p){ add(p.name||"Senza nome", p.colors||{}, p.links||null); });
+    }else if(raw && typeof raw==="object"){
+      Object.keys(raw).forEach(function(name){
+        var p = raw[name];
+        add(name, (p && p.colors) || {}, p && p.links);
+      });
+    }
+    PALETTES = out;
+    ACTIVE_PALETTE_NAMES = Object.keys(out).sort();
+    if(!activePaletteName) activePaletteName = ACTIVE_PALETTE_NAMES[0] || null;
+  }
+
   function buildPaletteGallery(){
-    const panel = document.getElementById("palPanel");
+    var panel = document.getElementById("palPanel");
     panel.innerHTML = "";
-    const head = document.createElement("div");
+    var head = document.createElement("div");
     head.className="pal-head";
-    head.innerHTML = `<h4 style="margin:0">Palette disponibili</h4>
-      <button id="btnApplyActiveFromGallery">Applica palette attiva ai layer visibili</button>`;
+    head.innerHTML =
+      "<h4 style='margin:0'>Palette disponibili</h4>" +
+      "<div style='display:flex;gap:8px;align-items:center'>" +
+        "<button id='btnApplyActiveFromGallery'>Applica palette attiva ai layer visibili</button>" +
+        "<input id='palFile' type='file' accept='.json' title='Carica file palette JSON' />" +
+      "</div>";
     panel.appendChild(head);
     document.getElementById("btnApplyActiveFromGallery").onclick = applyActivePaletteToVisible;
 
-    ACTIVE_PALETTE_NAMES.forEach(name=>{
-      const p = PALETTES[name];
-      const div=document.createElement("div"); div.className="pal-item"; div.title=`Imposta e applica "${name}"`;
-      const title=document.createElement("div"); title.className="pal-title"; title.textContent=name;
-      const sw1=document.createElement("div"); sw1.className="sw-row";
-      const sw2=document.createElement("div"); sw2.className="sw-row";
-      for(let i=1;i<=10;i++){ const c=document.createElement("div"); c.className="sw"; c.style.background=p.colors[String(i)]; sw1.appendChild(c); }
-      for(let i=11;i<=20;i++){ const c=document.createElement("div"); c.className="sw"; c.style.background=p.colors[String(i)]; sw2.appendChild(c); }
+    var palFile = document.getElementById("palFile");
+    palFile.onchange = async function(ev){
+      var f = palFile.files && palFile.files[0];
+      if(!f) return;
+      try{
+        var txt = await f.text();
+        var obj = JSON.parse(txt);
+        mergePalettes(obj);
+        buildPaletteGallery();
+        updateActivePalTag();
+        log("Palette aggiunte da file: "+f.name,"ok");
+      }catch(e){
+        log("Errore palette JSON: "+e.message,"err");
+      }
+      palFile.value = "";
+    };
+
+    ACTIVE_PALETTE_NAMES.forEach(function(name){
+      var p = PALETTES[name];
+      var div=document.createElement("div"); div.className="pal-item"; div.title="Imposta e applica \""+name+"\"";
+      var title=document.createElement("div"); title.className="pal-title";
+
+      var titleText = document.createElement("div");
+      titleText.textContent = name;
+
+      var linksWrap = document.createElement("div");
+      linksWrap.className = "pal-links";
+      if(p.links){
+        if(p.links.google_images){ var a=document.createElement("a"); a.href=p.links.google_images; a.target="_blank"; a.title="Google Images"; a.textContent="🔍"; linksWrap.appendChild(a); }
+        if(p.links.wikipedia){ var a2=document.createElement("a"); a2.href=p.links.wikipedia; a2.target="_blank"; a2.title="Wikipedia"; a2.textContent="📖"; linksWrap.appendChild(a2); }
+        if(p.links.google_arts_culture){ var a3=document.createElement("a"); a3.href=p.links.google_arts_culture; a3.target="_blank"; a3.title="Google Arts & Culture"; a3.textContent="🏛️"; linksWrap.appendChild(a3); }
+        if(p.links.wikiart){ var a4=document.createElement("a"); a4.href=p.links.wikiart; a4.target="_blank"; a4.title="WikiArt"; a4.textContent="🎨"; linksWrap.appendChild(a4); }
+      }
+
+      title.appendChild(titleText);
+      title.appendChild(linksWrap);
+
+      var sw1=document.createElement("div"); sw1.className="sw-row";
+      var sw2=document.createElement("div"); sw2.className="sw-row";
+      for(var i=1;i<=10;i++){ var c1=document.createElement("div"); c1.className="sw"; c1.style.background=p.colors[String(i)]; sw1.appendChild(c1); }
+      for(var j=11;j<=20;j++){ var c2=document.createElement("div"); c2.className="sw"; c2.style.background=p.colors[String(j)]; sw2.appendChild(c2); }
+
       div.appendChild(title); div.appendChild(sw1); div.appendChild(sw2);
-      div.onclick = ()=>{
+      div.onclick = function(){
         activePaletteName = name;
         updateActivePalTag();
-        applyActivePaletteToVisible(); // applica SUBITO a tutti i layer visibili
+        applyActivePaletteToVisible();
       };
       panel.appendChild(div);
     });
   }
+
   function updateActivePalTag(){
-    document.getElementById("activePalTag").textContent = activePaletteName ? `Palette attiva: ${activePaletteName}` : "(nessuna palette attiva)";
+    document.getElementById("activePalTag").textContent = activePaletteName ? ("Palette attiva: "+activePaletteName) : "(nessuna palette attiva)";
   }
 
-  // ====== RENDERER & APPLICAZIONE ======
+  /* ====== RENDERER ====== */
   function buildRenderer(field, palette, override){
-    const infos = [];
-    const maxRank = 20;
-    
-    for(let i=1; i<=maxRank; i++){
-      const invRank = maxRank - i + 1; // inversione: classe grande -> colore 1
-      let hex;
-      
-      if(override && override[String(invRank)]) {
-        hex = override[String(invRank)];
-      } else if(palette && palette.colors) {
-        hex = palette.colors[String(invRank)] || palette.colors[invRank];
-      } else {
-        // Fallback se non c'è palette
-        hex = "#cccccc";
-      }
-      
+    var infos = [];
+    var maxRank = 20;
+    for(var i=1;i<=maxRank;i++){
+      var invRank = maxRank - i + 1; /* classe grande -> colore 1 */
+      var hex = "#cccccc";
+      if(override && override[String(invRank)]) hex = override[String(invRank)];
+      else if(palette && palette.colors) hex = palette.colors[String(invRank)] || palette.colors[invRank];
       infos.push({
         value: i,
-        symbol: { 
-          type: "simple-fill", 
-          color: hex, 
-          outline: { color: [0,0,0,0], width: 0 } 
-        },
-        label: `Classe ${i}`
+        symbol: { type:"simple-fill", color: hex, outline: { color:[0,0,0,0], width:0 } },
+        label: "Classe "+i
       });
     }
-    
     return {
-      type: "unique-value",
+      type:"unique-value",
       field: field,
-      defaultSymbol: { 
-        type: "simple-fill", 
-        color: [220,220,220,0], 
-        outline: { color: [0,0,0,0], width: 0 } 
-      },
+      defaultSymbol: { type:"simple-fill", color:[220,220,220,0], outline:{color:[0,0,0,0],width:0} },
       uniqueValueInfos: infos
     };
   }
 
   function applyPalette(entry){
-    if(!entry.groupField){ 
-      log(`${entry.title}: imposta il campo legenda (es. group20 o group_nac)`,"err"); 
-      return; 
-    }
-    
+    if(!entry.groupField){ log(entry.title+": imposta il campo legenda (es. group20 o group_nac)","err"); return; }
     if(!entry.basePalette){
-      if(!activePaletteName){ 
-        log("Nessuna palette attiva: scegli dalla gallery","err"); 
-        return; 
-      }
+      if(!activePaletteName){ log("Nessuna palette attiva: scegli dalla gallery","err"); return; }
       entry.basePalette = PALETTES[activePaletteName];
     }
-    
     entry.layer.renderer = buildRenderer(entry.groupField, entry.basePalette, entry.override);
-    entry.layer.opacity = entry.opacity ?? 1;
+    entry.layer.opacity = entry.opacity || 1;
   }
 
   function shuffleColors(entry){
-    if(!entry.basePalette){ 
-      log(`Imposta una palette per ${entry.title}`,"err"); 
-      return; 
-    }
-    
-    const ranks = [...Array(20)].map((_, i) => String(i+1));
-    const cols = ranks.map(r => entry.basePalette.colors[r]);
-    
-    // Fisher-Yates shuffle
-    for(let i = cols.length-1; i > 0; i--){
-      const j = Math.floor(Math.random() * (i+1));
-      [cols[i], cols[j]] = [cols[j], cols[i]];
-    }
-    
-    entry.override = {};
-    ranks.forEach((r, i) => {
-      entry.override[r] = cols[i];
-    });
-    
-    applyPalette(entry);
-    updateCardSwatches(entry);
+    if(!entry.basePalette){ log("Imposta una palette per "+entry.title,"err"); return; }
+    var ranks = []; for(var i=1;i<=20;i++) ranks.push(String(i));
+    var cols = ranks.map(function(r){ return entry.basePalette.colors[r]; });
+    for(var k=cols.length-1;k>0;k--){ var j=Math.floor(Math.random()*(k+1)); var tmp=cols[k]; cols[k]=cols[j]; cols[j]=tmp; }
+    entry.override = {}; ranks.forEach(function(r,i){ entry.override[r]=cols[i]; });
+    applyPalette(entry); updateCardSwatches(entry);
   }
-
   function resetLayer(entry){
-    // Reimposta la palette attiva e pulisce lo shuffle
-    if(activePaletteName){
-      entry.basePalette = PALETTES[activePaletteName];
-    }
-    entry.override = null;
-    applyPalette(entry);
-    updateCardSwatches(entry);
+    if(activePaletteName){ entry.basePalette = PALETTES[activePaletteName]; }
+    entry.override = null; applyPalette(entry); updateCardSwatches(entry);
   }
-
   function applyActivePaletteToVisible(){
-    if(!activePaletteName){ 
-      log("Seleziona prima una palette nella gallery","err"); 
-      return; 
-    }
-    
-    const p = PALETTES[activePaletteName];
-    LAYERS.filter(e => e.visible).forEach(e => {
-      e.basePalette = p;
-      e.override = null;
-      applyPalette(e);
-      updateCardSwatches(e);
+    if(!activePaletteName){ log("Seleziona prima una palette nella gallery","err"); return; }
+    var p = PALETTES[activePaletteName];
+    LAYERS.filter(function(e){return e.visible;}).forEach(function(e){
+      e.basePalette = p; e.override=null; applyPalette(e); updateCardSwatches(e);
     });
-    
     refreshLayerCards();
   }
 
-  // ====== CARICAMENTO: TopoJSON / GeoJSON ======
+  /* ====== CARICAMENTO layer ====== */
   async function addFromGeoJSONObject(obj, titleBase){
-    const blob = new Blob([JSON.stringify(obj)], {type: "application/json"});
-    const blobUrl = URL.createObjectURL(blob);
-    const layer = new GeoJSONLayer({ url: blobUrl, title: titleBase });
+    var blob = new Blob([JSON.stringify(obj)], {type:"application/json"});
+    var blobUrl = URL.createObjectURL(blob);
+    var layer = new GeoJSONLayer({ url: blobUrl, title: titleBase });
     map.add(layer);
-    
-    const entry = { 
-      layer, 
-      title: titleBase, 
-      groupField: null, 
-      opacity: 1, 
-      override: null, 
-      basePalette: null, 
-      visible: true 
-    };
-    
+    var entry = { layer:layer, title:titleBase, groupField:null, opacity:1, override:null, basePalette:null, visible:true };
     LAYERS.push(entry);
-    
-    layer.when(async () => {
+
+    layer.when(async function(){
       entry.groupField = await detectGroupField(layer);
-      
-      // assegna subito palette attiva (se esiste) e applica
       if(activePaletteName) entry.basePalette = PALETTES[activePaletteName];
       applyPalette(entry);
       refreshLayerCards();
-      
-      try{ 
-        const ex = await layer.queryExtent(); 
-        if(ex.extent) view.goTo(ex.extent.expand(1.05)); 
-      } catch(e) {}
-      
-      log(`Caricato: ${titleBase}`,"ok");
+      try{ var ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch(e){}
+      log("Caricato: "+titleBase,"ok");
     });
   }
 
-  async function addFromURL(baseName){
-    const url = `./${baseName}.topojson`;
+  async function addFromPath(path){
+    var baseName = path.replace(/^.*[\\/]/,"").replace(/\.[^.]+$/,"");
     try{
-      const resp = await fetch(url, {cache: "no-store"});
-      if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      
-      const txt = await resp.text();
-      let obj = JSON.parse(txt);
-      
+      var resp = await fetch(path,{cache:"no-store"});
+      if(!resp.ok) throw new Error("HTTP "+resp.status);
+      var txt = await resp.text();
+      var obj = JSON.parse(txt);
+
       if(obj.type === "Topology"){
-        const names = Object.keys(obj.objects || {});
-        if(!names.length) throw new Error("TopoJSON senza objects");
-        
-        let pick = names[0], maxn = 0;
-        for(const n of names){ 
-          const g = obj.objects[n]; 
-          const cnt = (g?.geometries || []).length; 
-          if(cnt > maxn){ maxn = cnt; pick = n; } 
-        }
-        
-        const geo = window.topojsonClient.feature(obj, obj.objects[pick]);
+        var names = Object.keys(obj.objects || {}); if(!names.length) throw new Error("TopoJSON senza objects");
+        var pick = names[0], maxn = 0;
+        for(var n of names){ var g=obj.objects[n]; var cnt=(g && g.geometries || []).length; if(cnt>maxn){maxn=cnt; pick=n;} }
+        var geo = window.topojsonClient.feature(obj, obj.objects[pick]);
         await addFromGeoJSONObject(geo, baseName);
       } else {
-        const isGeo = obj && ((obj.type === "FeatureCollection" && Array.isArray(obj.features)) || 
-                             (obj.type === "Feature" && obj.geometry));
+        var isGeo = obj && ((obj.type==="FeatureCollection" && Array.isArray(obj.features)) || (obj.type==="Feature" && obj.geometry));
         if(!isGeo) throw new Error("Formato non riconosciuto");
         await addFromGeoJSONObject(obj, baseName);
       }
-    } catch(e){ 
-      log(`Errore "${baseName}": ${e.message}`,"err"); 
+    }catch(e){
+      log('Errore "'+path+'": '+e.message,"err");
     }
   }
 
   async function detectGroupField(layer){
-    const prefs = ["group20", "group_nac", "RANK", "group", "Rank20"];
+    var prefs = ["group20","group_nac","RANK","group","Rank20"];
     try{
-      const q = layer.createQuery(); 
-      q.outFields = ["*"]; 
-      q.returnGeometry = false; 
-      q.num = 1;
-      
-      const r = await layer.queryFeatures(q);
+      var q = layer.createQuery(); q.outFields = ["*"]; q.returnGeometry=false; q.num=1;
+      var r = await layer.queryFeatures(q);
       if(r.features.length){
-        const attrs = r.features[0].attributes;
-        for(const k of prefs){ 
-          if(k in attrs) return k; 
-        }
-        
-        const keys = Object.keys(attrs);
-        return keys.find(k => k !== "OBJECTID" && k !== "FID") || keys[0] || null;
+        var attrs = r.features[0].attributes;
+        for(var k of prefs){ if(k in attrs) return k; }
+        var keys = Object.keys(attrs);
+        return keys.find(function(k){return k!=="OBJECTID" && k!=="FID";}) || keys[0] || null;
       }
-    } catch(e){}
+    }catch(e){}
     return null;
   }
 
-  // ====== UI — Server list ======
-  const serverWrap = document.getElementById("serverWrap");
-  // mapping nome -> entry per gestire toggle visibilità da checkbox server
-  const nameToEntry = new Map();
+  /* ====== UI – Server list ====== */
+  var serverWrap = document.getElementById("serverWrap");
+  var nameToEntry = new Map();
 
   function initServerList(){
     serverWrap.innerHTML = "";
-    
-    SERVER_LAYERS.forEach(name => {
-      const item = document.createElement("div"); 
-      item.className = "srv-item";
-      
-      const cb = document.createElement("input"); 
-      cb.type = "checkbox"; 
-      cb.value = name;
-      
-      const lbl = document.createElement("div"); 
-      lbl.className = "srv-name"; 
-      lbl.textContent = name.replace(/_/g, " ");
-      
-      item.appendChild(cb); 
-      item.appendChild(lbl);
-      serverWrap.appendChild(item);
+    SERVER_ITEMS.forEach(function(item){
+      var name = item.label, path = item.path;
+      var div = document.createElement("div"); div.className="srv-item";
+      var cb = document.createElement("input"); cb.type="checkbox"; cb.value=path;
+      var lbl = document.createElement("div"); lbl.className="srv-name"; lbl.textContent = name.replace(/_/g," ");
+      div.appendChild(cb); div.appendChild(lbl); serverWrap.appendChild(div);
 
-      cb.onchange = async () => {
-        const entry = nameToEntry.get(name);
+      cb.onchange = async function(){
+        var entry = nameToEntry.get(path);
         if(cb.checked){
-          if(entry){ 
-            entry.visible = true; 
-            entry.layer.visible = true; 
-            refreshLayerCards(); 
-          } else {      
-            await addFromURL(name).then(() => nameToEntry.set(name, LAYERS[LAYERS.length-1]));
-          }
-        } else {
-          if(entry){ 
-            entry.visible = false; 
-            entry.layer.visible = false; 
-            refreshLayerCards(); 
-          }
+          if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
+          else { await addFromPath(path); nameToEntry.set(path, LAYERS[LAYERS.length-1]); }
+        }else{
+          if(entry){ entry.visible=false; entry.layer.visible=false; refreshLayerCards(); }
         }
       };
     });
 
-    document.getElementById("btnLoadSelected").onclick = async () => {
-      const checks = [...serverWrap.querySelectorAll('input[type="checkbox"]')];
-      const picked = checks.filter(x => x.checked).map(x => x.value);
-      
+    document.getElementById("btnLoadSelected").onclick = async function(){
+      var checks = Array.prototype.slice.call(serverWrap.querySelectorAll('input[type="checkbox"]'));
+      var picked = checks.filter(function(x){return x.checked;}).map(function(x){return x.value;});
       if(!picked.length){
         log("Nessun layer selezionato: attivo e carico tutti","ok");
         await loadAllServerLayers(checks);
-      } else {
-        for(const n of picked){
-          const cb = checks.find(x => x.value === n); 
-          if(cb) cb.checked = true;
-          
-          const entry = nameToEntry.get(n);
-          if(entry){ 
-            entry.visible = true; 
-            entry.layer.visible = true; 
-            refreshLayerCards(); 
-          } else {      
-            await addFromURL(n).then(() => nameToEntry.set(n, LAYERS[LAYERS.length-1]));
-          }
+      }else{
+        for(var n of picked){
+          var cb = checks.find(function(x){return x.value===n;}); if(cb) cb.checked = true;
+          var entry = nameToEntry.get(n);
+          if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
+          else { await addFromPath(n); nameToEntry.set(n, LAYERS[LAYERS.length-1]); }
         }
       }
     };
 
-    document.getElementById("btnLoadAll").onclick = async () => {
-      const checks = [...serverWrap.querySelectorAll('input[type="checkbox"]')];
+    document.getElementById("btnLoadAll").onclick = async function(){
+      var checks = Array.prototype.slice.call(serverWrap.querySelectorAll('input[type="checkbox"]'));
       await loadAllServerLayers(checks);
     };
   }
 
   async function loadAllServerLayers(checks){
-    for(const cb of checks){ 
-      cb.checked = true; 
-    }
-    
-    for(const n of SERVER_LAYERS){
-      const entry = nameToEntry.get(n);
-      if(entry){ 
-        entry.visible = true; 
-        entry.layer.visible = true; 
-        refreshLayerCards(); 
-      } else {      
-        await addFromURL(n).then(() => nameToEntry.set(n, LAYERS[LAYERS.length-1]));
-      }
+    for(var cb of checks){ cb.checked = true; }
+    for(var it of SERVER_ITEMS){
+      var path = it.path;
+      var entry = nameToEntry.get(path);
+      if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
+      else { await addFromPath(path); nameToEntry.set(path, LAYERS[LAYERS.length-1]); }
     }
   }
 
-  // ====== UI — File locali ======
-  document.getElementById("fileInput").addEventListener("change", async ev => {
-    for(const f of ev.target.files){
+  /* ====== UI – File locali (Geo/Topo/PAL) ====== */
+  document.getElementById("fileInput").addEventListener("change", async function(ev){
+    var files = ev.target.files;
+    for(var i=0;i<files.length;i++){
+      var f = files[i];
       try{
-        const txt = await f.text(); 
-        const obj = JSON.parse(txt);
-        const base = f.name.replace(/\.[^.]+$/, "");
-        
-        if(obj.type === "Topology"){
-          const names = Object.keys(obj.objects || {}); 
-          if(!names.length){ 
-            log(`TopoJSON senza objects: ${f.name}`,"err"); 
-            continue; 
-          }
-          
-          let pick = names[0], maxn = 0;
-          for(const n of names){ 
-            const g = obj.objects[n]; 
-            const cnt = (g?.geometries || []).length; 
-            if(cnt > maxn){ maxn = cnt; pick = n; } 
-          }
-          
-          const geo = window.topojsonClient.feature(obj, obj.objects[pick]);
+        var txt = await f.text();
+        var obj = JSON.parse(txt);
+
+        /* Se ha struttura "palette", fondi dentro PALETTES */
+        if(obj && (Array.isArray(obj.palettes) || (typeof obj==="object" && Object.values(obj)[0] && Object.values(obj)[0].colors))){
+          mergePalettes(obj);
+          buildPaletteGallery();
+          updateActivePalTag();
+          log("Palette aggiunte da file: "+f.name,"ok");
+          continue;
+        }
+
+        /* Altrimenti prova come Geo/Topo */
+        var base = f.name.replace(/\.[^.]+$/,"");
+        if(obj.type==="Topology"){
+          var names = Object.keys(obj.objects || {}); if(!names.length){ log("TopoJSON senza objects: "+f.name,"err"); continue; }
+          var pick = names[0], maxn=0;
+          for(var n of names){ var g=obj.objects[n]; var cnt=(g && g.geometries || []).length; if(cnt>maxn){maxn=cnt; pick=n;} }
+          var geo = window.topojsonClient.feature(obj, obj.objects[pick]);
           await addFromGeoJSONObject(geo, base);
         } else {
-          const isGeo = obj && ((obj.type === "FeatureCollection" && Array.isArray(obj.features)) || 
-                               (obj.type === "Feature" && obj.geometry));
-          if(!isGeo){ 
-            log(`"${f.name}" non è GeoJSON/TopoJSON valido`,"err"); 
-            continue; 
-          }
+          var isGeo = obj && ((obj.type==="FeatureCollection" && Array.isArray(obj.features)) || (obj.type==="Feature" && obj.geometry));
+          if(!isGeo){ log('"'+f.name+'" non è GeoJSON/TopoJSON/palette valido','err'); continue; }
           await addFromGeoJSONObject(obj, base);
         }
-      } catch(e){ 
-        log(`Errore file ${f.name}: ${e.message}`,"err"); 
+      }catch(e){
+        log("Errore file "+f.name+": "+e.message,"err");
       }
     }
     ev.target.value = "";
   });
 
-  // ====== UI — Layer cards ======
-  const layersWrap = document.getElementById("layersWrap");
-  
+  /* ====== UI — Layer cards ====== */
+  var layersWrap = document.getElementById("layersWrap");
   function refreshLayerCards(){
     layersWrap.innerHTML = "";
-    
-    LAYERS.forEach((entry, idx) => {
-      const card = document.createElement("div"); 
-      card.className = "card";
-      
-      card.innerHTML = `
-        <h4>${entry.title}</h4>
-        <div class="row">
-          <label class="muted" style="width:90px">Visibile</label>
-          <input type="checkbox" id="vis-${idx}" ${entry.visible ? "checked" : ""}>
-          <label class="muted" style="margin-left:12px;width:110px">Campo legenda</label>
-          <input id="gf-${idx}" class="grow" type="text" value="${entry.groupField || ''}" placeholder="group20 o group_nac">
-        </div>
-        <div class="row">
-          <label class="muted" style="width:90px">Trasparenza</label>
-          <input id="op-${idx}" type="range" min="0" max="1" step="0.05" value="${entry.opacity ?? 1}">
-        </div>
-        <div class="row" style="gap:6px">
-          <button id="btnShuffle-${idx}">🎲 Shuffle</button>
-          <button id="btnReset-${idx}">Reset</button>
-          <button id="btnRemove-${idx}">Rimuovi</button>
-        </div>
-        <div class="row"><span class="muted" id="paletteSw-${idx}"></span></div>
-      `;
-      
+    LAYERS.forEach(function(entry, idx){
+      var card = document.createElement("div"); card.className="card";
+      card.innerHTML =
+        "<h4>"+entry.title+"</h4>"+
+        "<div class='row'>"+
+          "<label class='muted' style='width:90px'>Visibile</label>"+
+          "<input type='checkbox' id='vis-"+idx+"' "+(entry.visible?"checked":"")+">"+
+          "<label class='muted' style='margin-left:12px;width:110px'>Campo legenda</label>"+
+          "<input id='gf-"+idx+"' class='grow' type='text' value='"+(entry.groupField||"")+"' placeholder='group20 o group_nac'>"+
+        "</div>"+
+        "<div class='row'>"+
+          "<label class='muted' style='width:90px'>Trasparenza</label>"+
+          "<input id='op-"+idx+"' type='range' min='0' max='1' step='0.05' value='"+(entry.opacity||1)+"'>"+
+        "</div>"+
+        "<div class='row' style='gap:6px'>"+
+          "<button id='btnShuffle-"+idx+"'>🎲 Shuffle</button>"+
+          "<button id='btnReset-"+idx+"'>Reset</button>"+
+          "<button id='btnRemove-"+idx+"'>Rimuovi</button>"+
+        "</div>"+
+        "<div class='row'><span class='muted' id='paletteSw-"+idx+"'></span></div>";
       layersWrap.appendChild(card);
 
-      // visibilità
-      const vis = card.querySelector(`#vis-${idx}`);
-      vis.onchange = () => { 
-        entry.visible = vis.checked; 
-        entry.layer.visible = entry.visible; 
-      };
+      var vis = card.querySelector("#vis-"+idx);
+      vis.onchange = function(){ entry.visible = vis.checked; entry.layer.visible = entry.visible; };
 
-      // campo legenda
-      const gf = card.querySelector(`#gf-${idx}`);
-      gf.onchange = () => { 
-        entry.groupField = gf.value.trim(); 
-        applyPalette(entry); 
-        updateCardSwatches(entry); 
-      };
+      var gf = card.querySelector("#gf-"+idx);
+      gf.onchange = function(){ entry.groupField = gf.value.trim(); applyPalette(entry); updateCardSwatches(entry); };
 
-      // trasparenza
-      const op = card.querySelector(`#op-${idx}`);
-      op.oninput = () => { 
-        entry.opacity = Number(op.value); 
-        entry.layer.opacity = entry.opacity; 
-      };
+      var op = card.querySelector("#op-"+idx);
+      op.oninput = function(){ entry.opacity = Number(op.value); entry.layer.opacity = entry.opacity; };
 
-      // shuffle / reset / remove
-      card.querySelector(`#btnShuffle-${idx}`).onclick = () => shuffleColors(entry);
-      card.querySelector(`#btnReset-${idx}`).onclick   = () => resetLayer(entry);
-      card.querySelector(`#btnRemove-${idx}`).onclick  = () => {
+      card.querySelector("#btnShuffle-"+idx).onclick = function(){ shuffleColors(entry); };
+      card.querySelector("#btnReset-"+idx).onclick   = function(){ resetLayer(entry); };
+      card.querySelector("#btnRemove-"+idx).onclick  = function(){
         map.remove(entry.layer);
-        const k = LAYERS.indexOf(entry);
-        if(k >= 0) LAYERS.splice(k, 1);
+        var k = LAYERS.indexOf(entry); if(k>=0) LAYERS.splice(k,1);
         refreshLayerCards();
       };
 
@@ -693,89 +614,61 @@ require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], (EsriMap,M
   }
 
   function updateCardSwatches(entry){
-    const k = LAYERS.indexOf(entry);
-    const el = document.getElementById(`paletteSw-${k}`);
+    var k = LAYERS.indexOf(entry);
+    var el = document.getElementById("paletteSw-"+k);
     if(!el) return;
-    
-    if(!(entry.basePalette || activePaletteName)){
-      el.textContent = "(nessuna palette assegnata)";
-      return;
-    }
-    
-    const base = entry.basePalette || PALETTES[activePaletteName];
-    const pal = entry.override ? {colors: entry.override} : base;
-    const wrap = document.createElement("span");
-    
-    for(let i = 1; i <= 20; i++){
-      const hex = pal.colors[String(i)];
-      const s = document.createElement("span");
-      s.title = `${i}:${hex}`;
-      s.style.cssText = `display:inline-block;width:10px;height:10px;border:1px solid #ccc;margin-left:2px;background:${hex};vertical-align:middle;border-radius:2px`;
+    if(!(entry.basePalette || activePaletteName)){ el.textContent="(nessuna palette assegnata)"; return; }
+    var base = entry.basePalette || PALETTES[activePaletteName];
+    var pal = entry.override ? {colors: entry.override} : base;
+    var wrap = document.createElement("span");
+    for(var i=1;i<=20;i++){
+      var hex = pal.colors[String(i)];
+      var s = document.createElement("span");
+      s.title = i+":"+hex;
+      s.style.cssText = "display:inline-block;width:10px;height:10px;border:1px solid #ccc;margin-left:2px;background:"+hex+";vertical-align:middle;border-radius:2px";
       wrap.appendChild(s);
     }
-    
-    el.innerHTML = `Palette: <strong>${(entry.basePalette || {name: activePaletteName}).name || activePaletteName}</strong> ${wrap.outerHTML}`;
+    el.innerHTML = "Palette: <strong>"+((entry.basePalette && entry.basePalette.name) || activePaletteName)+"</strong> "+wrap.outerHTML;
   }
 
-  // Shuffle globale
-  document.getElementById("btnShuffleGlobal").onclick = () => {
-    const vis = LAYERS.filter(e => e.visible);
-    if(!vis.length){ 
-      log("Nessun layer visibile","err"); 
-      return; 
-    }
-    
-    vis.forEach(e => shuffleColors(e));
+  /* Shuffle globale */
+  document.getElementById("btnShuffleGlobal").onclick = function(){
+    var vis = LAYERS.filter(function(e){return e.visible;});
+    if(!vis.length){ log("Nessun layer visibile","err"); return; }
+    vis.forEach(function(e){ shuffleColors(e); });
     refreshLayerCards();
   };
 
-  // Controllo globale campo legenda
-  document.getElementById("btnApplyGlobalField").onclick = async () => {
-    const sel = document.querySelector('input[name="globalField"]:checked')?.value || "group20";
-    const vis = LAYERS.filter(x => x.visible);
-    
-    if(!vis.length){ 
-      log("Nessun layer visibile","err"); 
-      return; 
+  /* Controllo globale campo legenda */
+  document.getElementById("btnApplyGlobalField").onclick = async function(){
+    var sel = (document.querySelector('input[name="globalField"]:checked')||{}).value || "group20";
+    var vis = LAYERS.filter(function(x){return x.visible;});
+    if(!vis.length){ log("Nessun layer visibile","err"); return; }
+    for(var e of vis){
+      var ok = await fieldExists(e.layer, sel);
+      if(ok){ e.groupField = sel; applyPalette(e); }
+      else { log(e.title+': campo "'+sel+'" non presente (lasciato invariato)',"err"); }
     }
-    
-    for(const e of vis){
-      const ok = await fieldExists(e.layer, sel);
-      if(ok){
-        e.groupField = sel;
-        applyPalette(e);
-      } else {
-        log(`${e.title}: campo "${sel}" non presente (lasciato invariato)`,"err");
-      }
-    }
-    
     refreshLayerCards();
   };
 
-  // Applica palette attiva ai visibili (dal pannello)
   document.getElementById("btnApplyActivePalette").onclick = applyActivePaletteToVisible;
 
   async function fieldExists(layer, fname){
     try{
-      const q = layer.createQuery(); 
-      q.outFields = ["*"]; 
-      q.returnGeometry = false; 
-      q.num = 1;
-      
-      const r = await layer.queryFeatures(q);
-      if(r.features.length){
-        return Object.prototype.hasOwnProperty.call(r.features[0].attributes, fname);
-      }
-    } catch(e){}
+      var q = layer.createQuery(); q.outFields=["*"]; q.returnGeometry=false; q.num=1;
+      var r = await layer.queryFeatures(q);
+      if(r.features.length){ return Object.prototype.hasOwnProperty.call(r.features[0].attributes, fname); }
+    }catch(e){}
     return false;
   }
 
-  // Server list
+  /* ======= Init ======= */
   initServerList();
-  // Palette
-  loadPalettes();
+  /* carico palette di default dal file rinominato */
+  loadPalettesFromURL("./palette_from_tbw.json");
 
-}); // require
+}); /* require */
 </script>
 </body>
 </html>
