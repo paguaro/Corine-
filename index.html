@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Corine – distretti & palette</title>
+<title>Corine — Layer & Palette</title>
 
 <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
 <script src="https://js.arcgis.com/4.33/"></script>
 
-<!-- TopoJSON come ES Module -->
+<!-- TopoJSON client as ESM -->
 <script type="module">
   import * as topojson from "https://cdn.jsdelivr.net/npm/topojson-client@3/+esm";
   window.topojsonClient = topojson;
@@ -16,659 +16,520 @@
 
 <style>
   html,body,#viewDiv{height:100%;margin:0}
-  body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  body{font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background:#fff}
 
-  /* ===== Pannello layer (sinistra) ===== */
-  #panel{position:absolute;top:10px;left:10px;z-index:20;background:#fff;padding:12px;border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.2);font-size:14px;max-width:520px;max-height:92%;overflow:auto}
+  /* ==== Layout principale: pannello sinistro snello + sidebar destra (1/6) ==== */
+  #viewDiv{position:absolute; inset:0}
+  /* pannello layer (sinistra) */
+  #panel{position:absolute; top:12px; left:12px; z-index:30; width:420px; max-height:88vh; overflow:auto;
+    background:#fff; border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,.2); padding:10px}
   #panel.collapsed{display:none}
-  #panelToggle{position:absolute;top:10px;left:10px;z-index:21;border:none;border-radius:10px;background:#fff;
-    box-shadow:0 6px 18px rgba(0,0,0,.2);width:40px;height:40px;cursor:pointer;font-size:18px}
+  #panelToggle{position:absolute; top:12px; left:12px; z-index:31; width:40px; height:40px; border:none; border-radius:10px;
+    background:#fff; box-shadow:0 6px 18px rgba(0,0,0,.2); cursor:pointer; font-size:18px}
 
-  .row{display:flex;gap:8px;align-items:center;margin:.5rem 0}
+  /* sidebar palette (a destra, ~1/6) */
+  #palSidebar{position:absolute; top:12px; right:12px; bottom:70px; z-index:30; width:min(18vw, 360px); min-width:280px;
+    background:#fff; border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,.22); padding:10px; overflow:auto}
+  #palSidebar.collapsed{display:none}
+  #palToggle{position:absolute; top:12px; right:12px; z-index:31; height:40px; padding:0 10px; border:none; border-radius:10px;
+    background:#fff; box-shadow:0 6px 18px rgba(0,0,0,.2); cursor:pointer}
+
+  /* contenuti e micro-UI */
+  h4{margin:.3rem 0 .5rem 0; font-size:14px}
+  .muted{color:#666; font-size:12px}
+  .row{display:flex; align-items:center; gap:8px; margin:.4rem 0}
   .grow{flex:1}
-  .muted{color:#666}
   button,select,input{font:inherit}
-  input[type="range"]{width:100%}
-  #log{font-size:12px;max-height:150px;overflow:auto;margin-top:6px}
 
-  .card{border:1px solid #e5e7eb;border-radius:10px;background:#fafafa;padding:10px;margin-top:10px}
-  .card h4{margin:.2rem 0 .6rem 0;font-size:14px}
+  /* griglia file server compatta */
+  #serverWrap{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:6px}
+  .srv{display:flex; align-items:center; gap:6px; border:1px solid #e7e7e7; border-radius:9px; padding:6px; background:#fff}
+  .srv label{font-size:13px; font-weight:600; letter-spacing:.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 
-  /* lista file server */
-  #serverWrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
-  .srv-item{border:1px solid #e5e7eb;border-radius:10px;padding:8px;background:#fff;display:flex;align-items:center;gap:8px}
-  .srv-name{font-weight:600;flex:1}
+  /* cards layer compatte */
+  .card{border:1px solid #ececec; border-radius:10px; padding:8px; background:#fafafa; margin-top:8px}
+  .card h5{margin:0 0 6px 0; font-size:13px}
+  .chips{display:flex; gap:6px; align-items:center}
+  .chip{padding:4px 8px; border-radius:999px; background:#fff; border:1px solid #e5e5e5; font-size:12px}
 
-  /* ===== Pannello palette (destra) ===== */
-  #palToggle{position:absolute;left:60px;top:10px;z-index:21;border:none;border-radius:10px;background:#fff;
-    box-shadow:0 6px 18px rgba(0,0,0,.2);height:40px;padding:0 10px;cursor:pointer}
-  #palPanel{position:absolute;right:15px;top:60px;z-index:24;display:none;background:#fff;border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.25);padding:12px;max-height:70%;overflow:auto;min-width:460px}
-  .pal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px}
-  .pal-item{border:1px solid #eee;border-radius:10px;padding:8px;margin-bottom:8px;cursor:pointer}
-  .pal-title{display:flex;align-items:center;gap:10px;font-weight:600;margin-bottom:6px}
-  .pal-links a{font-size:14px;text-decoration:none;opacity:.8;margin-left:6px}
+  /* palette items eleganti, zero bottoni */
+  .pal-item{border:1px solid #eee; border-radius:10px; padding:8px; margin-bottom:8px; cursor:pointer; background:#fff}
+  .pal-title{display:flex; align-items:center; justify-content:space-between; gap:8px; font-weight:600; font-size:13px}
+  .pal-links a{font-size:14px; text-decoration:none; opacity:.85; margin-left:6px}
   .pal-links a:hover{opacity:1}
-  .sw-row{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
-  .sw{height:14px;border-radius:3px;border:1px solid #ddd}
+  .sw-row{display:grid; grid-template-columns:repeat(10,1fr); gap:3px; margin-top:6px}
+  .sw{height:12px; border-radius:3px; border:1px solid #ddd}
 
-  /* Export PNG (in basso a destra) */
-  #btnExport{position:absolute;right:15px;bottom:15px;z-index:26;border:none;border-radius:999px;padding:10px 14px;
-    background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}
+  /* export + shuffle in basso a destra */
+  .dockBR{position:absolute; right:12px; bottom:12px; z-index:40; display:flex; gap:8px; align-items:center}
+  .pill{border:none; border-radius:999px; padding:10px 14px; background:#fff; box-shadow:0 6px 18px rgba(0,0,0,.28); cursor:pointer}
 
-  /* Basemap picker */
-  #bm-toggle{position:absolute;right:70px;bottom:15px;z-index:25;width:42px;height:42px;border-radius:999px;border:none;
-    background:#ffffff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px}
-  #bm-panel{position:absolute;right:70px;bottom:70px;z-index:24;display:none;background:#fff;border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.25);padding:10px;min-width:220px}
-  #bm-panel label{display:block;font-size:12px;color:#555;margin-bottom:4px}
+  /* toast info */
+  #toast{position:absolute; left:12px; bottom:70px; z-index:35; display:none; background:#111; color:#fff; border-radius:10px;
+    padding:8px 10px; box-shadow:0 6px 18px rgba(0,0,0,.35); max-width:76%}
+  #toast button{margin-left:8px; border:none; border-radius:8px; padding:4px 8px; cursor:pointer}
 
-  /* Shuffle globale */
-  #btnShuffleGlobal{position:absolute;left:15px;bottom:15px;z-index:26;border:none;border-radius:999px;padding:10px 14px;
-    background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);cursor:pointer}
-
-  /* Toast click info */
-  #toast{position:absolute;bottom:65px;left:15px;z-index:30;background:#111;color:#fff;border-radius:10px;padding:10px 12px;
-    box-shadow:0 6px 18px rgba(0,0,0,.4);display:none;max-width:80%}
-  #toast button{margin-left:8px;border:none;border-radius:8px;padding:4px 8px;cursor:pointer}
-
-  /* Miglior spacing su schermi stretti */
-  @media (max-width: 900px){
-    #panel{max-width:92%}
-    #palPanel{right:10px;left:10px;min-width:auto}
+  @media (max-width: 980px){
+    #panel{width:92vw}
+    #palSidebar{width:calc(100vw - 24px); left:12px; min-width:auto}
   }
 </style>
 </head>
 <body>
-<div id="viewDiv"></div>
+  <div id="viewDiv"></div>
 
-<!-- toggles -->
-<button id="panelToggle" title="Mostra/Nascondi pannello">☰</button>
-<button id="palToggle" title="Palette">🎨 Palette</button>
+  <!-- toggles -->
+  <button id="panelToggle" title="Mostra/Nascondi pannello">☰</button>
+  <button id="palToggle" title="Palette">🎨 Palette</button>
 
-<!-- basemap & export -->
-<button id="bm-toggle" title="Basemap">🗺️</button>
-<div id="bm-panel">
-  <label>Mappa di base</label>
-  <select id="bm-select">
-    <option value="gray-vector">Grigio (vector)</option>
-    <option value="topo-vector">Topografica (vector)</option>
-    <option value="streets-vector">Strade (vector)</option>
-    <option value="satellite">Satellite</option>
-    <option value="hybrid">Ibrida</option>
-    <option value="oceans">Oceani</option>
-    <option value="dark-gray-vector">Grigio scuro (vector)</option>
-    <option value="terrain">Terreno</option>
-    <option value="osm-standard">OSM Standard</option>
-  </select>
-</div>
-<button id="btnExport" title="Esporta PNG mappa">Export PNG</button>
+  <!-- pannello layer -->
+  <div id="panel">
+    <div class="row" style="justify-content:space-between">
+      <strong>Layer & file</strong>
+      <span class="muted">legend: per-layer • palette: per-layer</span>
+    </div>
 
-<!-- shuffle globale -->
-<button id="btnShuffleGlobal" title="Rimescola colori di tutti i layer visibili">🎲 Shuffle</button>
+    <h4>Layer sul server</h4>
+    <div id="serverWrap"></div>
+    <div class="row">
+      <button id="btnLoadSelected" class="chip">Carica selezionati</button>
+      <button id="btnLoadAll" class="chip">Carica tutti</button>
+      <span class="muted grow" style="text-align:right">oppure file locali…</span>
+    </div>
 
-<!-- ===== Pannello layer (sinistra) ===== -->
-<div id="panel">
-  <div class="row"><strong>Controlli globali</strong></div>
-  <div class="row">
-    <label class="muted">Campo legenda</label>
-    <label><input type="radio" name="globalField" value="group20" checked> group20</label>
-    <label><input type="radio" name="globalField" value="group_nac"> group_nac</label>
-    <button id="btnApplyGlobalField">Applica ai layer visibili</button>
-  </div>
-  <div class="row">
-    <button id="btnApplyActivePalette">Applica palette attiva ai layer visibili</button>
-    <span id="activePalTag" class="muted"></span>
+    <div class="row">
+      <input id="fileInput" class="grow" type="file" accept=".topojson,.geojson,.json" multiple>
+    </div>
+
+    <h4 style="margin-top:10px">Layer caricati</h4>
+    <div id="layersWrap"></div>
   </div>
 
-  <hr>
-  <div class="row"><strong>Layer sul server</strong></div>
-  <div id="serverWrap"></div>
-  <div class="row">
-    <button id="btnLoadSelected">Carica selezionati</button>
-    <button id="btnLoadAll">Carica tutti</button>
-    <span class="muted grow" style="text-align:right">oppure</span>
+  <!-- sidebar palette (elegante, click = applica) -->
+  <div id="palSidebar">
+    <div class="row" style="justify-content:space-between">
+      <h4 style="margin:0">Palette</h4>
+      <span class="muted">clic per applicare</span>
+    </div>
+    <div id="palGallery"></div>
   </div>
 
-  <div class="row">
-    <input id="fileInput" class="grow" type="file" accept=".topojson,.geojson,.json" multiple>
-    <span class="muted">carica GeoJSON/TopoJSON **o** palette JSON</span>
+  <!-- export + shuffle (dock in basso a destra) -->
+  <div class="dockBR">
+    <button id="btnShuffleGlobal" class="pill" title="Rimescola tutti i layer visibili">🎲 Shuffle</button>
+    <button id="btnExport" class="pill" title="Esporta PNG">Export PNG</button>
   </div>
 
-  <hr>
-  <div><strong>Layer caricati</strong></div>
-  <div id="layersWrap"></div>
-
-  <hr>
-  <div><strong>Log</strong></div>
-  <div id="log"></div>
-</div>
-
-<!-- ===== Pannello palette (destra) ===== -->
-<div id="palPanel"></div>
-
-<!-- toast -->
-<div id="toast"><span id="toastText"></span><button id="btnCopy">Copia</button></div>
+  <!-- toast -->
+  <div id="toast"><span id="toastText"></span><button id="btnCopy">Copia</button></div>
 
 <script>
-/* =========== FILE server (ora con path espliciti) =========== */
+/* ==================== CONFIG ==================== */
 const SERVER_ITEMS = [
-  { label:"AVEIRO", path:"AVEIRO.topojson" },
-  { label:"BEJA", path:"BEJA.topojson" },
-  { label:"BRAGA", path:"BRAGA.topojson" },
-  { label:"BRAGANCA", path:"BRAGANCA.topojson" },
-  { label:"CASTELO_BRANCO", path:"CASTELO_BRANCO.topojson" },
-  { label:"COIMBRA", path:"COIMBRA.topojson" },
-  { label:"EVORA", path:"EVORA.topojson" },
-  { label:"FARO", path:"FARO.topojson" },
-  { label:"GUARDA", path:"GUARDA.topojson" },
-  { label:"LEIRIA", path:"LEIRIA.topojson" },
-  { label:"LISBOA", path:"LISBOA.topojson" },
-  /* Richiesta: Lisboa blocchi */
-  { label:"LISBOA_BLOCOS", path:"lisboa_blocos.json" },
-  { label:"PORTALEGRE", path:"PORTALEGRE.topojson" },
-  { label:"PORTO", path:"PORTO.topojson" },
-  { label:"SANTAREM", path:"SANTAREM.topojson" },
-  { label:"SETUBAL", path:"SETUBAL.topojson" },
-  { label:"VIANA_DO_CASTELO", path:"VIANA_DO_CASTELO.topojson" },
-  { label:"VILA_REAL", path:"VILA_REAL.topojson" },
-  { label:"VISEU", path:"VISEU.topojson" }
+  {label:"AVEIRO", path:"AVEIRO.topojson"},
+  {label:"BEJA", path:"BEJA.topojson"},
+  {label:"BRAGA", path:"BRAGA.topojson"},
+  {label:"BRAGANCA", path:"BRAGANCA.topojson"},
+  {label:"CASTELO BRANCO", path:"CASTELO_BRANCO.topojson"},
+  {label:"COIMBRA", path:"COIMBRA.topojson"},
+  {label:"EVORA", path:"EVORA.topojson"},
+  {label:"FARO", path:"FARO.topojson"},
+  {label:"GUARDA", path:"GUARDA.topojson"},
+  {label:"LEIRIA", path:"LEIRIA.topojson"},
+  {label:"LISBOA", path:"LISBOA.topojson"},
+  /* richiesta */
+  {label:"LISBOA_BLOCOS", path:"lisboa_blocos.json"},
+  {label:"PORTALEGRE", path:"PORTALEGRE.topojson"},
+  {label:"PORTO", path:"PORTO.topojson"},
+  {label:"SANTAREM", path:"SANTAREM.topojson"},
+  {label:"SETUBAL", path:"SETUBAL.topojson"},
+  {label:"VIANA DO CASTELO", path:"VIANA_DO_CASTELO.topojson"},
+  {label:"VILA REAL", path:"VILA_REAL.topojson"},
+  {label:"VISEU", path:"VISEU.topojson"}
 ];
 
-/* =========== VARIABILI APP =========== */
-let PALETTES = {};              // nome -> {name, colors:{1..20:"#hex"}, links?}
-let ACTIVE_PALETTE_NAMES = [];
-let activePaletteName = null;
-const LAYERS = [];              // [{layer,title,groupField,opacity,override,basePalette,visible}]
+const DEFAULT_PALETTE_URL = "./palette_from_tbw.json";
+
+/* ==================== STATE ==================== */
 let map, view;
+let PALETTES = {};                  // name -> {name, colors{1..20}, links?}
+let PALETTE_NAMES = [];
+const LAYERS = [];                  // objects of loaded GeoJSONLayer
+const NAME_TO_ENTRY = new Map();    // path -> entry
 
-/* =========== MAPPA 2D =========== */
-require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], function(EsriMap,MapView,GeoJSONLayer){
+/* ==================== ARCGIS ==================== */
+require(["esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer"], function(EsriMap, MapView, GeoJSONLayer){
 
+  /* --- map --- */
   map = new EsriMap({ basemap:"gray-vector" });
   view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:7 });
   view.ui.move("zoom","top-right");
 
-  /* Pannelli */
-  var panel = document.getElementById("panel");
-  document.getElementById("panelToggle").onclick = function(){ panel.classList.toggle("collapsed"); };
-  var palPanel = document.getElementById("palPanel");
+  /* toggles */
+  document.getElementById("panelToggle").onclick = function(){
+    document.getElementById("panel").classList.toggle("collapsed");
+  };
   document.getElementById("palToggle").onclick = function(){
-    palPanel.style.display = (palPanel.style.display==="block"?"none":"block");
+    document.getElementById("palSidebar").classList.toggle("collapsed");
   };
 
-  /* Basemap */
-  var btnBM = document.getElementById("bm-toggle");
-  var pnlBM = document.getElementById("bm-panel");
-  var selBM = document.getElementById("bm-select");
-  btnBM.onclick = function(){ pnlBM.style.display = (!pnlBM.style.display || pnlBM.style.display==="none")?"block":"none"; };
-  selBM.onchange = function(){ map.basemap = selBM.value; };
-
-  /* Export PNG */
+  /* export */
   document.getElementById("btnExport").onclick = async function(){
     try{
-      var shot = await view.takeScreenshot({ format:"png", quality: 100 });
-      var a = document.createElement("a");
+      const shot = await view.takeScreenshot({ format:"png", quality:100 });
+      const a = document.createElement("a");
       a.href = shot.dataUrl;
       a.download = "map_"+new Date().toISOString().replace(/[:.]/g,"-")+".png";
       a.click();
-    }catch(e){ log("Errore export PNG: "+e.message,"err"); }
+    }catch(e){ console.error(e); }
   };
 
-  /* Toast su click */
-  var toast = document.getElementById("toast");
-  var toastText = document.getElementById("toastText");
-  document.getElementById("btnCopy").onclick = async function(){
-    try{ await navigator.clipboard.writeText(toastText.textContent||""); toast.style.display="none"; log("Copiato negli appunti","ok"); }
-    catch(e){ log("Copy fallita","err"); }
-  };
-  view.on("click", async function(event){
-    try{
-      var hit = await view.hitTest(event);
-      var g = hit.results && hit.results.find(function(r){ return r.graphic && r.graphic.layer && r.graphic.layer.type==="geojson"; });
-      if(!g){ toast.style.display="none"; return; }
-      var entry = LAYERS.find(function(x){ return x.layer===g.graphic.layer; });
-      if(!entry){ toast.style.display="none"; return; }
-      var attrs = g.graphic.attributes || {};
-      var field = entry.groupField;
-      var val = attrs[field];
-      var rend = entry.layer.renderer;
-      var hex = "#000000";
-      if(rend && rend.uniqueValueInfos){
-        var it = rend.uniqueValueInfos.find(function(u){ return String(u.value)===String(val); });
-        if(it && it.symbol && it.symbol.color){
-          hex = Array.isArray(it.symbol.color) ? rgbaToHex(it.symbol.color) : it.symbol.color;
-        }
-      }
-      toastText.textContent = "layer: "+entry.title+" | "+field+"="+val+" | color="+hex;
-      toast.style.display = "inline-flex";
-    }catch(e){}
-  });
-  function rgbaToHex(c){ var r=c[0]||0,g=c[1]||0,b=c[2]||0; return "#"+[r,g,b].map(function(x){return x.toString(16).padStart(2,"0");}).join(""); }
-
-  /* LOG */
-  function log(msg,cls){
-    var div=document.getElementById("log");
-    var el=document.createElement("div"); if(cls) el.className=cls;
-    el.textContent=msg; div.appendChild(el); div.scrollTop=div.scrollHeight;
-    if(cls==="err"){ console.error(msg); } else { console.log(msg); }
-  }
-
-  /* ====== PALETTE ====== */
-  async function loadPalettesFromURL(url){
-    try{
-      var r = await fetch(url,{cache:"no-store"});
-      if(!r.ok) throw new Error("HTTP "+r.status);
-      var raw = await r.json();
-      mergePalettes(raw);
-      buildPaletteGallery();
-      updateActivePalTag();
-      log("Palette caricate da "+url+": "+ACTIVE_PALETTE_NAMES.length,"ok");
-    }catch(e){
-      log("Impossibile caricare "+url+" (nessuna palette iniziale)","err");
-    }
-  }
-
-  function mergePalettes(raw){
-    var out = Object.assign({}, PALETTES);
-    function add(name, colors, links){
-      var norm={}; for(var i=1;i<=20;i++){ var k=String(i); norm[k] = colors[k] || colors[i]; }
-      if(Object.values(norm).some(function(v){return !v;})) return;
-      out[name] = { name:name, colors:norm, links: links || null };
-    }
-    if(Array.isArray(raw && raw.palettes)){
-      raw.palettes.forEach(function(p){ add(p.name||"Senza nome", p.colors||{}, p.links||null); });
-    }else if(raw && typeof raw==="object"){
-      Object.keys(raw).forEach(function(name){
-        var p = raw[name];
-        add(name, (p && p.colors) || {}, p && p.links);
-      });
-    }
-    PALETTES = out;
-    ACTIVE_PALETTE_NAMES = Object.keys(out).sort();
-    if(!activePaletteName) activePaletteName = ACTIVE_PALETTE_NAMES[0] || null;
-  }
-
-  function buildPaletteGallery(){
-    var panel = document.getElementById("palPanel");
-    panel.innerHTML = "";
-    var head = document.createElement("div");
-    head.className="pal-head";
-    head.innerHTML =
-      "<h4 style='margin:0'>Palette disponibili</h4>" +
-      "<div style='display:flex;gap:8px;align-items:center'>" +
-        "<button id='btnApplyActiveFromGallery'>Applica palette attiva ai layer visibili</button>" +
-        "<input id='palFile' type='file' accept='.json' title='Carica file palette JSON' />" +
-      "</div>";
-    panel.appendChild(head);
-    document.getElementById("btnApplyActiveFromGallery").onclick = applyActivePaletteToVisible;
-
-    var palFile = document.getElementById("palFile");
-    palFile.onchange = async function(ev){
-      var f = palFile.files && palFile.files[0];
-      if(!f) return;
-      try{
-        var txt = await f.text();
-        var obj = JSON.parse(txt);
-        mergePalettes(obj);
-        buildPaletteGallery();
-        updateActivePalTag();
-        log("Palette aggiunte da file: "+f.name,"ok");
-      }catch(e){
-        log("Errore palette JSON: "+e.message,"err");
-      }
-      palFile.value = "";
-    };
-
-    ACTIVE_PALETTE_NAMES.forEach(function(name){
-      var p = PALETTES[name];
-      var div=document.createElement("div"); div.className="pal-item"; div.title="Imposta e applica \""+name+"\"";
-      var title=document.createElement("div"); title.className="pal-title";
-
-      var titleText = document.createElement("div");
-      titleText.textContent = name;
-
-      var linksWrap = document.createElement("div");
-      linksWrap.className = "pal-links";
-      if(p.links){
-        if(p.links.google_images){ var a=document.createElement("a"); a.href=p.links.google_images; a.target="_blank"; a.title="Google Images"; a.textContent="🔍"; linksWrap.appendChild(a); }
-        if(p.links.wikipedia){ var a2=document.createElement("a"); a2.href=p.links.wikipedia; a2.target="_blank"; a2.title="Wikipedia"; a2.textContent="📖"; linksWrap.appendChild(a2); }
-        if(p.links.google_arts_culture){ var a3=document.createElement("a"); a3.href=p.links.google_arts_culture; a3.target="_blank"; a3.title="Google Arts & Culture"; a3.textContent="🏛️"; linksWrap.appendChild(a3); }
-        if(p.links.wikiart){ var a4=document.createElement("a"); a4.href=p.links.wikiart; a4.target="_blank"; a4.title="WikiArt"; a4.textContent="🎨"; linksWrap.appendChild(a4); }
-      }
-
-      title.appendChild(titleText);
-      title.appendChild(linksWrap);
-
-      var sw1=document.createElement("div"); sw1.className="sw-row";
-      var sw2=document.createElement("div"); sw2.className="sw-row";
-      for(var i=1;i<=10;i++){ var c1=document.createElement("div"); c1.className="sw"; c1.style.background=p.colors[String(i)]; sw1.appendChild(c1); }
-      for(var j=11;j<=20;j++){ var c2=document.createElement("div"); c2.className="sw"; c2.style.background=p.colors[String(j)]; sw2.appendChild(c2); }
-
-      div.appendChild(title); div.appendChild(sw1); div.appendChild(sw2);
-      div.onclick = function(){
-        activePaletteName = name;
-        updateActivePalTag();
-        applyActivePaletteToVisible();
-      };
-      panel.appendChild(div);
-    });
-  }
-
-  function updateActivePalTag(){
-    document.getElementById("activePalTag").textContent = activePaletteName ? ("Palette attiva: "+activePaletteName) : "(nessuna palette attiva)";
-  }
-
-  /* ====== RENDERER ====== */
-  function buildRenderer(field, palette, override){
-    var infos = [];
-    var maxRank = 20;
-    for(var i=1;i<=maxRank;i++){
-      var invRank = maxRank - i + 1; /* classe grande -> colore 1 */
-      var hex = "#cccccc";
-      if(override && override[String(invRank)]) hex = override[String(invRank)];
-      else if(palette && palette.colors) hex = palette.colors[String(invRank)] || palette.colors[invRank];
-      infos.push({
-        value: i,
-        symbol: { type:"simple-fill", color: hex, outline: { color:[0,0,0,0], width:0 } },
-        label: "Classe "+i
-      });
-    }
-    return {
-      type:"unique-value",
-      field: field,
-      defaultSymbol: { type:"simple-fill", color:[220,220,220,0], outline:{color:[0,0,0,0],width:0} },
-      uniqueValueInfos: infos
-    };
-  }
-
-  function applyPalette(entry){
-    if(!entry.groupField){ log(entry.title+": imposta il campo legenda (es. group20 o group_nac)","err"); return; }
-    if(!entry.basePalette){
-      if(!activePaletteName){ log("Nessuna palette attiva: scegli dalla gallery","err"); return; }
-      entry.basePalette = PALETTES[activePaletteName];
-    }
-    entry.layer.renderer = buildRenderer(entry.groupField, entry.basePalette, entry.override);
-    entry.layer.opacity = entry.opacity || 1;
-  }
-
-  function shuffleColors(entry){
-    if(!entry.basePalette){ log("Imposta una palette per "+entry.title,"err"); return; }
-    var ranks = []; for(var i=1;i<=20;i++) ranks.push(String(i));
-    var cols = ranks.map(function(r){ return entry.basePalette.colors[r]; });
-    for(var k=cols.length-1;k>0;k--){ var j=Math.floor(Math.random()*(k+1)); var tmp=cols[k]; cols[k]=cols[j]; cols[j]=tmp; }
-    entry.override = {}; ranks.forEach(function(r,i){ entry.override[r]=cols[i]; });
-    applyPalette(entry); updateCardSwatches(entry);
-  }
-  function resetLayer(entry){
-    if(activePaletteName){ entry.basePalette = PALETTES[activePaletteName]; }
-    entry.override = null; applyPalette(entry); updateCardSwatches(entry);
-  }
-  function applyActivePaletteToVisible(){
-    if(!activePaletteName){ log("Seleziona prima una palette nella gallery","err"); return; }
-    var p = PALETTES[activePaletteName];
-    LAYERS.filter(function(e){return e.visible;}).forEach(function(e){
-      e.basePalette = p; e.override=null; applyPalette(e); updateCardSwatches(e);
-    });
+  /* shuffle globale accanto all’export */
+  document.getElementById("btnShuffleGlobal").onclick = function(){
+    const vis = LAYERS.filter(e => e.layer.visible);
+    if(!vis.length) return;
+    vis.forEach(shuffleColors);
     refreshLayerCards();
-  }
+  };
 
-  /* ====== CARICAMENTO layer ====== */
-  async function addFromGeoJSONObject(obj, titleBase){
-    var blob = new Blob([JSON.stringify(obj)], {type:"application/json"});
-    var blobUrl = URL.createObjectURL(blob);
-    var layer = new GeoJSONLayer({ url: blobUrl, title: titleBase });
-    map.add(layer);
-    var entry = { layer:layer, title:titleBase, groupField:null, opacity:1, override:null, basePalette:null, visible:true };
-    LAYERS.push(entry);
+  /* toast clic mappa */
+  const toast = document.getElementById("toast");
+  const toastText = document.getElementById("toastText");
+  document.getElementById("btnCopy").onclick = async function(){
+    try{ await navigator.clipboard.writeText(toastText.textContent||""); toast.style.display="none"; }catch(e){}
+  };
+  view.on("click", async function(ev){
+    const hit = await view.hitTest(ev);
+    const g = hit.results && hit.results.find(r => r.graphic && r.graphic.layer && r.graphic.layer.type==="geojson");
+    if(!g){ toast.style.display="none"; return; }
+    const entry = LAYERS.find(x => x.layer===g.graphic.layer);
+    if(!entry){ toast.style.display="none"; return; }
+    const attrs = g.graphic.attributes||{};
+    const field = entry.groupField;
+    const val = attrs[field];
+    toastText.textContent = entry.title+" • "+field+"="+val;
+    toast.style.display="inline-flex";
+  });
 
-    layer.when(async function(){
-      entry.groupField = await detectGroupField(layer);
-      if(activePaletteName) entry.basePalette = PALETTES[activePaletteName];
-      applyPalette(entry);
-      refreshLayerCards();
-      try{ var ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch(e){}
-      log("Caricato: "+titleBase,"ok");
-    });
-  }
-
-  async function addFromPath(path){
-    var baseName = path.replace(/^.*[\\/]/,"").replace(/\.[^.]+$/,"");
-    try{
-      var resp = await fetch(path,{cache:"no-store"});
-      if(!resp.ok) throw new Error("HTTP "+resp.status);
-      var txt = await resp.text();
-      var obj = JSON.parse(txt);
-
-      if(obj.type === "Topology"){
-        var names = Object.keys(obj.objects || {}); if(!names.length) throw new Error("TopoJSON senza objects");
-        var pick = names[0], maxn = 0;
-        for(var n of names){ var g=obj.objects[n]; var cnt=(g && g.geometries || []).length; if(cnt>maxn){maxn=cnt; pick=n;} }
-        var geo = window.topojsonClient.feature(obj, obj.objects[pick]);
-        await addFromGeoJSONObject(geo, baseName);
-      } else {
-        var isGeo = obj && ((obj.type==="FeatureCollection" && Array.isArray(obj.features)) || (obj.type==="Feature" && obj.geometry));
-        if(!isGeo) throw new Error("Formato non riconosciuto");
-        await addFromGeoJSONObject(obj, baseName);
-      }
-    }catch(e){
-      log('Errore "'+path+'": '+e.message,"err");
-    }
-  }
-
-  async function detectGroupField(layer){
-    var prefs = ["group20","group_nac","RANK","group","Rank20"];
-    try{
-      var q = layer.createQuery(); q.outFields = ["*"]; q.returnGeometry=false; q.num=1;
-      var r = await layer.queryFeatures(q);
-      if(r.features.length){
-        var attrs = r.features[0].attributes;
-        for(var k of prefs){ if(k in attrs) return k; }
-        var keys = Object.keys(attrs);
-        return keys.find(function(k){return k!=="OBJECTID" && k!=="FID";}) || keys[0] || null;
-      }
-    }catch(e){}
-    return null;
-  }
-
-  /* ====== UI – Server list ====== */
-  var serverWrap = document.getElementById("serverWrap");
-  var nameToEntry = new Map();
-
+  /* server list */
+  const serverWrap = document.getElementById("serverWrap");
   function initServerList(){
     serverWrap.innerHTML = "";
-    SERVER_ITEMS.forEach(function(item){
-      var name = item.label, path = item.path;
-      var div = document.createElement("div"); div.className="srv-item";
-      var cb = document.createElement("input"); cb.type="checkbox"; cb.value=path;
-      var lbl = document.createElement("div"); lbl.className="srv-name"; lbl.textContent = name.replace(/_/g," ");
-      div.appendChild(cb); div.appendChild(lbl); serverWrap.appendChild(div);
-
+    SERVER_ITEMS.forEach(item=>{
+      const d = document.createElement("div"); d.className="srv";
+      const cb = document.createElement("input"); cb.type="checkbox"; cb.value=item.path; cb.title="visibile";
+      const lab = document.createElement("label"); lab.textContent = item.label;
+      d.appendChild(cb); d.appendChild(lab); serverWrap.appendChild(d);
       cb.onchange = async function(){
-        var entry = nameToEntry.get(path);
+        const entry = NAME_TO_ENTRY.get(item.path);
         if(cb.checked){
           if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
-          else { await addFromPath(path); nameToEntry.set(path, LAYERS[LAYERS.length-1]); }
+          else { await addFromPath(item.path); NAME_TO_ENTRY.set(item.path, LAYERS[LAYERS.length-1]); }
         }else{
           if(entry){ entry.visible=false; entry.layer.visible=false; refreshLayerCards(); }
         }
       };
     });
-
-    document.getElementById("btnLoadSelected").onclick = async function(){
-      var checks = Array.prototype.slice.call(serverWrap.querySelectorAll('input[type="checkbox"]'));
-      var picked = checks.filter(function(x){return x.checked;}).map(function(x){return x.value;});
-      if(!picked.length){
-        log("Nessun layer selezionato: attivo e carico tutti","ok");
-        await loadAllServerLayers(checks);
-      }else{
-        for(var n of picked){
-          var cb = checks.find(function(x){return x.value===n;}); if(cb) cb.checked = true;
-          var entry = nameToEntry.get(n);
-          if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
-          else { await addFromPath(n); nameToEntry.set(n, LAYERS[LAYERS.length-1]); }
-        }
-      }
-    };
-
-    document.getElementById("btnLoadAll").onclick = async function(){
-      var checks = Array.prototype.slice.call(serverWrap.querySelectorAll('input[type="checkbox"]'));
-      await loadAllServerLayers(checks);
-    };
   }
+  initServerList();
 
-  async function loadAllServerLayers(checks){
-    for(var cb of checks){ cb.checked = true; }
-    for(var it of SERVER_ITEMS){
-      var path = it.path;
-      var entry = nameToEntry.get(path);
+  document.getElementById("btnLoadSelected").onclick = async function(){
+    const cbs = [].slice.call(serverWrap.querySelectorAll('input[type="checkbox"]'));
+    const picked = cbs.filter(x=>x.checked).map(x=>x.value);
+    if(!picked.length){ await loadAll(cbs); return; }
+    for(const p of picked){
+      const entry = NAME_TO_ENTRY.get(p);
       if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
-      else { await addFromPath(path); nameToEntry.set(path, LAYERS[LAYERS.length-1]); }
+      else { await addFromPath(p); NAME_TO_ENTRY.set(p, LAYERS[LAYERS.length-1]); }
+    }
+  };
+  document.getElementById("btnLoadAll").onclick = async function(){
+    const cbs = [].slice.call(serverWrap.querySelectorAll('input[type="checkbox"]'));
+    await loadAll(cbs);
+  };
+  async function loadAll(cbs){
+    for(const cb of cbs){ cb.checked = true; }
+    for(const it of SERVER_ITEMS){
+      const entry = NAME_TO_ENTRY.get(it.path);
+      if(entry){ entry.visible=true; entry.layer.visible=true; refreshLayerCards(); }
+      else { await addFromPath(it.path); NAME_TO_ENTRY.set(it.path, LAYERS[LAYERS.length-1]); }
     }
   }
 
-  /* ====== UI – File locali (Geo/Topo/PAL) ====== */
+  /* file locali (accetta anche palette.json ma senza bottoni) */
   document.getElementById("fileInput").addEventListener("change", async function(ev){
-    var files = ev.target.files;
-    for(var i=0;i<files.length;i++){
-      var f = files[i];
+    const files = ev.target.files;
+    for(let i=0;i<files.length;i++){
+      const f = files[i];
       try{
-        var txt = await f.text();
-        var obj = JSON.parse(txt);
-
-        /* Se ha struttura "palette", fondi dentro PALETTES */
-        if(obj && (Array.isArray(obj.palettes) || (typeof obj==="object" && Object.values(obj)[0] && Object.values(obj)[0].colors))){
-          mergePalettes(obj);
-          buildPaletteGallery();
-          updateActivePalTag();
-          log("Palette aggiunte da file: "+f.name,"ok");
+        const txt = await f.text();
+        const obj = JSON.parse(txt);
+        if(isPaletteObject(obj)){
+          mergePalettes(obj); buildPaletteGallery();
           continue;
         }
-
-        /* Altrimenti prova come Geo/Topo */
-        var base = f.name.replace(/\.[^.]+$/,"");
+        const base = f.name.replace(/\.[^.]+$/,"");
         if(obj.type==="Topology"){
-          var names = Object.keys(obj.objects || {}); if(!names.length){ log("TopoJSON senza objects: "+f.name,"err"); continue; }
-          var pick = names[0], maxn=0;
-          for(var n of names){ var g=obj.objects[n]; var cnt=(g && g.geometries || []).length; if(cnt>maxn){maxn=cnt; pick=n;} }
-          var geo = window.topojsonClient.feature(obj, obj.objects[pick]);
+          const names = Object.keys(obj.objects||{}); if(!names.length) continue;
+          let pick = names[0], maxn=0;
+          for(const n of names){ const g=obj.objects[n]; const cnt=(g && g.geometries || []).length; if(cnt>maxn){maxn=cnt; pick=n;} }
+          const geo = window.topojsonClient.feature(obj, obj.objects[pick]);
           await addFromGeoJSONObject(geo, base);
-        } else {
-          var isGeo = obj && ((obj.type==="FeatureCollection" && Array.isArray(obj.features)) || (obj.type==="Feature" && obj.geometry));
-          if(!isGeo){ log('"'+f.name+'" non è GeoJSON/TopoJSON/palette valido','err'); continue; }
+        }else{
           await addFromGeoJSONObject(obj, base);
         }
-      }catch(e){
-        log("Errore file "+f.name+": "+e.message,"err");
-      }
+      }catch(e){ console.error("File err:", f.name, e.message); }
     }
     ev.target.value = "";
   });
 
-  /* ====== UI — Layer cards ====== */
-  var layersWrap = document.getElementById("layersWrap");
+  /* add layer da path o oggetto */
+  async function addFromPath(path){
+    const resp = await fetch(path,{cache:"no-store"});
+    if(!resp.ok) throw new Error("HTTP "+resp.status);
+    const txt = await resp.text();
+    const obj = JSON.parse(txt);
+    if(obj.type==="Topology"){
+      const names = Object.keys(obj.objects||{}); if(!names.length) throw new Error("TopoJSON senza objects");
+      let pick = names[0], maxn=0;
+      for(const n of names){ const g=obj.objects[n]; const cnt=(g && g.geometries||[]).length; if(cnt>maxn){maxn=cnt; pick=n;} }
+      const geo = window.topojsonClient.feature(obj, obj.objects[pick]);
+      await addFromGeoJSONObject(geo, path.replace(/^.*[\\/]/,"").replace(/\.[^.]+$/,""));
+    }else{
+      await addFromGeoJSONObject(obj, path.replace(/^.*[\\/]/,"").replace(/\.[^.]+$/,""));
+    }
+  }
+  async function addFromGeoJSONObject(obj, titleBase){
+    if(!(obj && (obj.type==="FeatureCollection" || obj.type==="Feature"))) throw new Error("GeoJSON non valido");
+    const blob = new Blob([JSON.stringify(obj)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const layer = new GeoJSONLayer({ url, title:titleBase });
+    map.add(layer);
+    const entry = { layer, title:titleBase, groupField:null, paletteName:null, opacity:1, override:null, visible:true, fields:[] };
+    LAYERS.push(entry);
+
+    layer.when(async function(){
+      entry.fields = await sampleFields(layer);
+      entry.groupField = pickBestField(entry.fields);
+      entry.paletteName = PALETTE_NAMES[0] || null;
+      applyPalette(entry);
+      refreshLayerCards();
+      try{ const ex=await layer.queryExtent(); if(ex.extent) view.goTo(ex.extent.expand(1.05)); }catch(e){}
+    });
+  }
+  async function sampleFields(layer){
+    try{
+      const q = layer.createQuery(); q.outFields=["*"]; q.returnGeometry=false; q.num=1;
+      const r = await layer.queryFeatures(q);
+      if(r.features.length){ return Object.keys(r.features[0].attributes||{}); }
+    }catch(e){}
+    return [];
+  }
+  function pickBestField(fields){
+    const prefs = ["group20","group_nac","Rank20","group","rank"];
+    for(const p of prefs){ if(fields.includes(p)) return p; }
+    for(const k of fields){ if(!/^(OBJECTID|FID|id)$/i.test(k)) return k; }
+    return fields[0]||null;
+  }
+
+  /* renderer, apply, per-layer shuffle/reset */
+  function buildRenderer(field, palette, override){
+    const infos = [];
+    for(let i=1;i<=20;i++){
+      const inv = 21 - i; // classi grandi -> colore 1
+      const hex = (override && override[String(inv)]) || (palette && palette.colors[String(inv)]) || "#cccccc";
+      infos.push({
+        value:i,
+        symbol:{ type:"simple-fill", color:hex, outline:{color:[0,0,0,0], width:0} },
+        label:"Classe "+i
+      });
+    }
+    return { type:"unique-value", field, uniqueValueInfos:infos,
+      defaultSymbol:{ type:"simple-fill", color:[220,220,220,0], outline:{color:[0,0,0,0], width:0} } };
+  }
+  function applyPalette(entry){
+    if(!entry.groupField || !entry.paletteName) return;
+    const pal = PALETTES[entry.paletteName];
+    entry.layer.renderer = buildRenderer(entry.groupField, pal, entry.override);
+    entry.layer.opacity = entry.opacity || 1;
+  }
+  function shuffleColors(entry){
+    if(!entry.paletteName) return;
+    const pal = PALETTES[entry.paletteName];
+    const ranks = Array.from({length:20}, (_,i)=>String(i+1));
+    const cols = ranks.map(r=>pal.colors[r]);
+    for(let k=cols.length-1;k>0;k--){ const j=Math.floor(Math.random()*(k+1)); const t=cols[k]; cols[k]=cols[j]; cols[j]=t; }
+    entry.override = {}; ranks.forEach((r,i)=> entry.override[r]=cols[i]);
+    applyPalette(entry); updateCardSwatches(entry);
+  }
+  function resetLayer(entry){
+    entry.override = null; applyPalette(entry); updateCardSwatches(entry);
+  }
+
+  /* ===== Palette ===== */
+  function isPaletteObject(obj){
+    if(!obj) return false;
+    if(Array.isArray(obj.palettes)) return true;
+    const v = Object.values(obj)[0];
+    return v && v.colors;
+  }
+  function mergePalettes(raw){
+    const out = {...PALETTES};
+    function add(name, colors, links){
+      const norm={}; for(let i=1;i<=20;i++){ const k=String(i); norm[k]=colors[k]||colors[i]; }
+      if(Object.values(norm).some(v=>!v)) return;
+      out[name]={name, colors:norm, links:links||null};
+    }
+    if(Array.isArray(raw && raw.palettes)){
+      raw.palettes.forEach(p=> add(p.name||"Senza nome", p.colors||{}, p.links||null));
+    }else if(raw && typeof raw==="object"){
+      Object.keys(raw).forEach(name=>{
+        const p = raw[name];
+        add(name, (p&&p.colors)||{}, p&&p.links);
+      });
+    }
+    PALETTES = out;
+    PALETTE_NAMES = Object.keys(out).sort();
+  }
+  function buildPaletteGallery(){
+    const host = document.getElementById("palGallery");
+    host.innerHTML = "";
+    PALETTE_NAMES.forEach(name=>{
+      const p = PALETTES[name];
+      const div = document.createElement("div"); div.className="pal-item"; div.title="Applica "+name;
+      const title = document.createElement("div"); title.className="pal-title";
+      const tleft = document.createElement("div"); tleft.textContent = name;
+      const links = document.createElement("div"); links.className="pal-links";
+      if(p.links){
+        if(p.links.google_images){ const a=document.createElement("a"); a.href=p.links.google_images; a.target="_blank"; a.title="Google Images"; a.textContent="🔍"; links.appendChild(a); }
+        if(p.links.wikipedia){ const a2=document.createElement("a"); a2.href=p.links.wikipedia; a2.target="_blank"; a2.title="Wikipedia"; a2.textContent="📖"; links.appendChild(a2); }
+        if(p.links.google_arts_culture){ const a3=document.createElement("a"); a3.href=p.links.google_arts_culture; a3.target="_blank"; a3.title="Google Arts & Culture"; a3.textContent="🏛️"; links.appendChild(a3); }
+        if(p.links.wikiart){ const a4=document.createElement("a"); a4.href=p.links.wikiart; a4.target="_blank"; a4.title="WikiArt"; a4.textContent="🎨"; links.appendChild(a4); }
+      }
+      title.appendChild(tleft); title.appendChild(links);
+
+      const sw1 = document.createElement("div"); sw1.className="sw-row";
+      const sw2 = document.createElement("div"); sw2.className="sw-row";
+      for(let i=1;i<=10;i++){ const c=document.createElement("div"); c.className="sw"; c.style.background=p.colors[String(i)]; sw1.appendChild(c); }
+      for(let j=11;j<=20;j++){ const c=document.createElement("div"); c.className="sw"; c.style.background=p.colors[String(j)]; sw2.appendChild(c); }
+
+      div.appendChild(title); div.appendChild(sw1); div.appendChild(sw2);
+
+      /* click = applica SUBITO:
+         - se esistono layer selezionati nella UI (checkbox "Sel") applica solo a quelli
+         - altrimenti a tutti i layer VISIBILI
+      */
+      div.onclick = function(){
+        const targets = LAYERS.filter((e,idx)=>{
+          const chk = document.getElementById("sel-"+idx);
+          return chk && chk.checked;
+        });
+        const dest = targets.length ? targets : LAYERS.filter(e=>e.visible);
+        dest.forEach(e=>{ e.paletteName = name; e.override=null; applyPalette(e); updateCardSwatches(e); });
+        refreshLayerCards();
+      };
+
+      host.appendChild(div);
+    });
+  }
+
+  /* layer cards */
+  const layersWrap = document.getElementById("layersWrap");
   function refreshLayerCards(){
     layersWrap.innerHTML = "";
-    LAYERS.forEach(function(entry, idx){
-      var card = document.createElement("div"); card.className="card";
-      card.innerHTML =
-        "<h4>"+entry.title+"</h4>"+
-        "<div class='row'>"+
-          "<label class='muted' style='width:90px'>Visibile</label>"+
-          "<input type='checkbox' id='vis-"+idx+"' "+(entry.visible?"checked":"")+">"+
-          "<label class='muted' style='margin-left:12px;width:110px'>Campo legenda</label>"+
-          "<input id='gf-"+idx+"' class='grow' type='text' value='"+(entry.groupField||"")+"' placeholder='group20 o group_nac'>"+
-        "</div>"+
-        "<div class='row'>"+
-          "<label class='muted' style='width:90px'>Trasparenza</label>"+
-          "<input id='op-"+idx+"' type='range' min='0' max='1' step='0.05' value='"+(entry.opacity||1)+"'>"+
-        "</div>"+
-        "<div class='row' style='gap:6px'>"+
-          "<button id='btnShuffle-"+idx+"'>🎲 Shuffle</button>"+
-          "<button id='btnReset-"+idx+"'>Reset</button>"+
-          "<button id='btnRemove-"+idx+"'>Rimuovi</button>"+
-        "</div>"+
-        "<div class='row'><span class='muted' id='paletteSw-"+idx+"'></span></div>";
+    LAYERS.forEach((entry, idx)=>{
+      const card = document.createElement("div"); card.className="card";
+      const h = document.createElement("h5"); h.textContent = entry.title;
+      card.appendChild(h);
+
+      /* riga 1: selezione / visibile / opacità */
+      const r1 = document.createElement("div"); r1.className="row";
+      r1.innerHTML =
+        "<label class='muted'>Sel</label><input type='checkbox' id='sel-"+idx+"'>" +
+        "<label class='muted' style='margin-left:8px'>Vis</label><input type='checkbox' id='vis-"+idx+"' "+(entry.visible?"checked":"")+">" +
+        "<label class='muted' style='margin-left:8px'>Opacità</label><input type='range' id='op-"+idx+"' min='0' max='1' step='0.05' value='"+(entry.opacity||1)+"' class='grow'>";
+      card.appendChild(r1);
+
+      /* riga 2: campo legenda + palette per-layer */
+      const r2 = document.createElement("div"); r2.className="row";
+      const selField = document.createElement("select"); selField.id = "gf-"+idx; selField.className="grow";
+      // priorità: group20, group_nac, poi tutti
+      const ordered = orderFields(entry.fields);
+      ordered.forEach(f=>{
+        const opt = document.createElement("option"); opt.value=f; opt.textContent=f;
+        selField.appendChild(opt);
+      });
+      if(entry.groupField) selField.value = entry.groupField;
+      const selPal = document.createElement("select"); selPal.id="pal-"+idx; selPal.style.minWidth="140px";
+      PALETTE_NAMES.forEach(n=>{ const o=document.createElement("option"); o.value=n; o.textContent=n; selPal.appendChild(o); });
+      if(entry.paletteName) selPal.value = entry.paletteName;
+
+      r2.appendChild(labelSmall("Campo")); r2.appendChild(selField);
+      r2.appendChild(labelSmall("Palette")); r2.appendChild(selPal);
+      card.appendChild(r2);
+
+      /* riga 3: azioni piccole */
+      const r3 = document.createElement("div"); r3.className="chips";
+      const b1 = chipBtn("🎲 Shuffle"); const b2 = chipBtn("Reset"); const b3 = chipBtn("Rimuovi");
+      r3.appendChild(b1); r3.appendChild(b2); r3.appendChild(b3);
+      const swLine = document.createElement("div"); swLine.id="sw-"+idx; swLine.className="row"; swLine.style.marginTop="6px";
+      card.appendChild(r3); card.appendChild(swLine);
+
       layersWrap.appendChild(card);
 
-      var vis = card.querySelector("#vis-"+idx);
-      vis.onchange = function(){ entry.visible = vis.checked; entry.layer.visible = entry.visible; };
-
-      var gf = card.querySelector("#gf-"+idx);
-      gf.onchange = function(){ entry.groupField = gf.value.trim(); applyPalette(entry); updateCardSwatches(entry); };
-
-      var op = card.querySelector("#op-"+idx);
-      op.oninput = function(){ entry.opacity = Number(op.value); entry.layer.opacity = entry.opacity; };
-
-      card.querySelector("#btnShuffle-"+idx).onclick = function(){ shuffleColors(entry); };
-      card.querySelector("#btnReset-"+idx).onclick   = function(){ resetLayer(entry); };
-      card.querySelector("#btnRemove-"+idx).onclick  = function(){
+      // wire
+      document.getElementById("vis-"+idx).onchange = function(){ entry.visible=this.checked; entry.layer.visible=this.checked; };
+      document.getElementById("op-"+idx).oninput = function(){ entry.opacity=Number(this.value); entry.layer.opacity=entry.opacity; };
+      selField.onchange = function(){ entry.groupField=this.value; applyPalette(entry); updateCardSwatches(entry); };
+      selPal.onchange   = function(){ entry.paletteName=this.value; entry.override=null; applyPalette(entry); updateCardSwatches(entry); };
+      b1.onclick = function(){ shuffleColors(entry); };
+      b2.onclick = function(){ resetLayer(entry); };
+      b3.onclick = function(){
         map.remove(entry.layer);
-        var k = LAYERS.indexOf(entry); if(k>=0) LAYERS.splice(k,1);
+        const k = LAYERS.indexOf(entry); if(k>=0) LAYERS.splice(k,1);
         refreshLayerCards();
       };
 
       updateCardSwatches(entry);
     });
   }
-
+  function labelSmall(txt){ const l=document.createElement("label"); l.className="muted"; l.textContent=txt; return l; }
+  function chipBtn(txt){ const b=document.createElement("button"); b.className="chip"; b.textContent=txt; return b; }
+  function orderFields(arr){
+    const pref = ["group20","group_nac","Rank20","group","rank"];
+    const set = new Set(arr||[]);
+    const out = [];
+    pref.forEach(p=>{ if(set.has(p)) out.push(p); });
+    arr.forEach(k=>{ if(!out.includes(k)) out.push(k); });
+    return out;
+  }
   function updateCardSwatches(entry){
-    var k = LAYERS.indexOf(entry);
-    var el = document.getElementById("paletteSw-"+k);
-    if(!el) return;
-    if(!(entry.basePalette || activePaletteName)){ el.textContent="(nessuna palette assegnata)"; return; }
-    var base = entry.basePalette || PALETTES[activePaletteName];
-    var pal = entry.override ? {colors: entry.override} : base;
-    var wrap = document.createElement("span");
-    for(var i=1;i<=20;i++){
-      var hex = pal.colors[String(i)];
-      var s = document.createElement("span");
-      s.title = i+":"+hex;
-      s.style.cssText = "display:inline-block;width:10px;height:10px;border:1px solid #ccc;margin-left:2px;background:"+hex+";vertical-align:middle;border-radius:2px";
-      wrap.appendChild(s);
+    const idx = LAYERS.indexOf(entry);
+    const host = document.getElementById("sw-"+idx); if(!host) return;
+    host.innerHTML = "";
+    if(!entry.paletteName){ host.textContent=""; return; }
+    const pal = entry.override ? {colors:entry.override} : PALETTES[entry.paletteName];
+    const frag = document.createDocumentFragment();
+    for(let i=1;i<=20;i++){
+      const s=document.createElement("span");
+      s.style.cssText="display:inline-block;width:10px;height:10px;border:1px solid #ccc;margin-left:2px;background:"+pal.colors[String(i)]+";vertical-align:middle;border-radius:2px";
+      frag.appendChild(s);
     }
-    el.innerHTML = "Palette: <strong>"+((entry.basePalette && entry.basePalette.name) || activePaletteName)+"</strong> "+wrap.outerHTML;
+    host.appendChild(frag);
   }
 
-  /* Shuffle globale */
-  document.getElementById("btnShuffleGlobal").onclick = function(){
-    var vis = LAYERS.filter(function(e){return e.visible;});
-    if(!vis.length){ log("Nessun layer visibile","err"); return; }
-    vis.forEach(function(e){ shuffleColors(e); });
-    refreshLayerCards();
-  };
-
-  /* Controllo globale campo legenda */
-  document.getElementById("btnApplyGlobalField").onclick = async function(){
-    var sel = (document.querySelector('input[name="globalField"]:checked')||{}).value || "group20";
-    var vis = LAYERS.filter(function(x){return x.visible;});
-    if(!vis.length){ log("Nessun layer visibile","err"); return; }
-    for(var e of vis){
-      var ok = await fieldExists(e.layer, sel);
-      if(ok){ e.groupField = sel; applyPalette(e); }
-      else { log(e.title+': campo "'+sel+'" non presente (lasciato invariato)',"err"); }
-    }
-    refreshLayerCards();
-  };
-
-  document.getElementById("btnApplyActivePalette").onclick = applyActivePaletteToVisible;
-
-  async function fieldExists(layer, fname){
+  /* ===== Init palette ===== */
+  (async function(){
     try{
-      var q = layer.createQuery(); q.outFields=["*"]; q.returnGeometry=false; q.num=1;
-      var r = await layer.queryFeatures(q);
-      if(r.features.length){ return Object.prototype.hasOwnProperty.call(r.features[0].attributes, fname); }
-    }catch(e){}
-    return false;
-  }
+      const r = await fetch(DEFAULT_PALETTE_URL, {cache:"no-store"});
+      if(r.ok){
+        mergePalettes(await r.json());
+        buildPaletteGallery();
+      }
+    }catch(e){ console.warn("Palette default non caricate:", e.message); }
+  })();
 
-  /* ======= Init ======= */
-  initServerList();
-  /* carico palette di default dal file rinominato */
-  loadPalettesFromURL("./palette_from_tbw.json");
-
-}); /* require */
+}); // require end
 </script>
 </body>
 </html>
