@@ -23,7 +23,7 @@
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
   #viewDiv{position:absolute;inset:0}
 
-  /* Canvas di MapView: mai nero di default */
+  /* MapView canvas: non nero di default */
   .esri-view .esri-view-surface{ background-color:transparent; }
 
   /* pannello sinistro */
@@ -77,13 +77,22 @@
   .sw10{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin-top:6px}
   .sw{height:16px;border-radius:3px;border:1px solid #ddd}
 
-  /* dock centrale: sfondo/slideshow/shuffle/export */
+  /* dock centrale: sfondo/slideshow/shuffle/export + settings */
   .dockC{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;z-index:40;display:flex;gap:8px}
   .pill{border:none;border-radius:999px;padding:10px 14px;background:var(--btn);box-shadow:var(--shadow);cursor:pointer}
   .pill:hover{background:var(--btnh)}
-
-  /* margine per BasemapGallery in basso-destra */
   .esri-ui-bottom-right{margin:12px}
+
+  /* pannellino settings slideshow */
+  #ssPanel{
+    position:absolute;left:50%;transform:translateX(-50%);
+    bottom:64px;z-index:41;min-width:320px;max-width:90vw;
+    background:#fff;border-radius:12px;box-shadow:var(--shadow);padding:10px;display:none;
+  }
+  #ssPanel .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  #ssPanel .grid label{font-size:12px;color:#444}
+  #ssPanel .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+  #ssPanel.show{display:block}
 
   @media (max-width:980px){
     #panel{width:92vw}
@@ -128,12 +137,44 @@
     <div id="palGallery"></div>
   </div>
 
+  <!-- Dock -->
   <div class="dockC">
     <button id="btnDayNight" class="pill" title="Sfondo">🌓</button>
     <input id="bgColor" type="color" value="#111111" title="Colore sfondo" class="pill" style="width:48px;height:40px;padding:6px 8px">
     <button id="btnShow" class="pill" title="Slideshow on/off">🎞️</button>
     <button id="btnShuffleGlobal" class="pill" title="Rimescola linkato">🎲</button>
-    <button id="btnExport" class="pill" title="Esporta PNG">PNG</button>
+    <button id="btnExport" class="pill" title="Esporta PNG">Export</button>
+    <button id="btnSSSettings" class="pill" title="Impostazioni slideshow">⚙️</button>
+  </div>
+
+  <!-- Pannello impostazioni slideshow -->
+  <div id="ssPanel" aria-live="polite">
+    <div style="font-weight:600;margin-bottom:6px">Slideshow — Impostazioni</div>
+    <div class="row" style="margin-top:0">
+      <label class="grow"><input type="checkbox" id="ssNewWin"> Apri in nuova finestra (modalità Presenter)</label>
+    </div>
+    <div class="grid">
+      <div>
+        <label>Intervallo minimo (sec)</label>
+        <input type="number" id="ssIntMin" value="30" min="1" class="chip" style="width:100%">
+      </div>
+      <div>
+        <label>Intervallo massimo (sec)</label>
+        <input type="number" id="ssIntMax" value="60" min="1" class="chip" style="width:100%">
+      </div>
+      <div>
+        <label>Scala minima (1:n)</label>
+        <input type="number" id="ssScaleMin" value="25000" min="1000" class="chip" style="width:100%">
+      </div>
+      <div>
+        <label>Scala massima (1:n)</label>
+        <input type="number" id="ssScaleMax" value="50000" min="1000" class="chip" style="width:100%">
+      </div>
+    </div>
+    <div class="actions">
+      <button id="ssCancel" class="chip">Chiudi</button>
+      <button id="ssStart" class="chip">Avvia</button>
+    </div>
   </div>
 
 <script>
@@ -167,9 +208,26 @@ let PALETTES = {}, PALETTE_NAMES = [];
 const LAYERS = [];               // {layer,title,groupField,paletteName,opacity,override,visible,fields}
 const NAME_TO_ENTRY = new Map();
 const PALETTE_PERM = new Map();
-let showTimer = null;
+let showTimer = null;            // per setTimeout variabile
 let bgMode = "map";
-let SHUFFLE_TICK = 0;  // varia il seed a ogni shuffle
+let SHUFFLE_TICK = 0;            // varia il seed a ogni shuffle
+
+// settings slideshow correnti
+let SS_SETTINGS = {
+  newWin: false,
+  intMin: 30,
+  intMax: 60,
+  scaleMin: 25000,
+  scaleMax: 50000
+};
+
+/* ===== Utils ===== */
+function randBetween(a,b){ const lo=Math.min(a,b), hi=Math.max(a,b); return lo + Math.random()*(hi-lo); }
+function parseQS(){
+  const out={}; const q=location.search.slice(1).split("&").filter(Boolean);
+  q.forEach(kv=>{ const [k,v=""]=kv.split("="); out[decodeURIComponent(k)] = decodeURIComponent(v); });
+  return out;
+}
 
 /* ===== ArcGIS ===== */
 require([
@@ -254,23 +312,109 @@ require([
     if(bgMode==="blank") setCanvasBg(this.value);
   };
 
-  // slideshow: shuffle + zoom random sugli extent visibili
-  document.getElementById("btnShow").onclick = async function(){
-    if(showTimer){ clearInterval(showTimer); showTimer=null; this.textContent="🎞️"; return; }
+  /* ======== Slideshow / Presenter ======== */
+
+  // Pannello impostazioni
+  const ssPanel = document.getElementById("ssPanel");
+  const btnSS = document.getElementById("btnSSSettings");
+  const ssNewWin   = document.getElementById("ssNewWin");
+  const ssIntMin   = document.getElementById("ssIntMin");
+  const ssIntMax   = document.getElementById("ssIntMax");
+  const ssScaleMin = document.getElementById("ssScaleMin");
+  const ssScaleMax = document.getElementById("ssScaleMax");
+  const ssStart    = document.getElementById("ssStart");
+  const ssCancel   = document.getElementById("ssCancel");
+
+  btnSS.onclick = ()=>{ syncSsUI(); ssPanel.classList.toggle("show"); };
+  ssCancel.onclick = ()=> ssPanel.classList.remove("show");
+  ssStart.onclick = ()=>{
+    readSsUI();
+    ssPanel.classList.remove("show");
+    if(SS_SETTINGS.newWin){
+      // apri nuova finestra con parametri
+      const url = new URL(location.href);
+      url.searchParams.set("present","1");
+      url.searchParams.set("intMin",SS_SETTINGS.intMin);
+      url.searchParams.set("intMax",SS_SETTINGS.intMax);
+      url.searchParams.set("scaleMin",SS_SETTINGS.scaleMin);
+      url.searchParams.set("scaleMax",SS_SETTINGS.scaleMax);
+      window.open(url.toString(),"presenter","noopener,noreferrer");
+    }else{
+      // usa la pagina attuale
+      startPresenterLocal();
+    }
+  };
+  function syncSsUI(){
+    ssNewWin.checked = SS_SETTINGS.newWin;
+    ssIntMin.value   = SS_SETTINGS.intMin;
+    ssIntMax.value   = SS_SETTINGS.intMax;
+    ssScaleMin.value = SS_SETTINGS.scaleMin;
+    ssScaleMax.value = SS_SETTINGS.scaleMax;
+  }
+  function readSsUI(){
+    SS_SETTINGS.newWin  = !!ssNewWin.checked;
+    SS_SETTINGS.intMin  = Math.max(1, parseInt(ssIntMin.value||30,10));
+    SS_SETTINGS.intMax  = Math.max(SS_SETTINGS.intMin, parseInt(ssIntMax.value||60,10));
+    SS_SETTINGS.scaleMin= Math.max(1000, parseInt(ssScaleMin.value||25000,10));
+    SS_SETTINGS.scaleMax= Math.max(SS_SETTINGS.scaleMin, parseInt(ssScaleMax.value||50000,10));
+  }
+
+  // Toggle rapido (🎞️) — rimane come ON/OFF locale
+  document.getElementById("btnShow").onclick = function(){
+    if(showTimer){ stopPresenterLocal(); this.textContent="🎞️"; return; }
+    // se non ci sono impostazioni, usa quelle correnti
+    startPresenterLocal();
     this.textContent="⏹";
-    showTimer = setInterval(async ()=>{
-      doGlobalShuffle();
-      const ext = await unionVisibleExtent();
-      if(ext){
-        const x = ext.xmin + Math.random()*(ext.xmax - ext.xmin);
-        const y = ext.ymin + Math.random()*(ext.ymax - ext.ymin);
-        const scale = 20000 + Math.random()*(200000 - 20000);
-        view.goTo({ center:{x,y,spatialReference:ext.spatialReference}, scale }).catch(()=>{});
-      }
-    }, 8000);
   };
 
-  // shuffle globale
+  function stopPresenterLocal(){
+    if(showTimer){ clearTimeout(showTimer); showTimer=null; }
+    document.getElementById("btnShow").textContent="🎞️";
+  }
+  function startPresenterLocal(){
+    stopPresenterLocal();
+    // fa un passo subito
+    doPresenterStep();
+  }
+  async function doPresenterStep(){
+    // shuffle linkato su layer visibili
+    SHUFFLE_TICK++;
+    PALETTE_PERM.clear();
+    LAYERS.filter(e=>e.layer.visible).forEach(e=> shuffleColors(e, true, SHUFFLE_TICK));
+    refreshLayerCards();
+    // zoom random entro la scala impostata
+    const ext = await unionVisibleExtent();
+    if(ext){
+      const x = ext.xmin + Math.random()*(ext.xmax - ext.xmin);
+      const y = ext.ymin + Math.random()*(ext.ymax - ext.ymin);
+      const scale = randBetween(SS_SETTINGS.scaleMin, SS_SETTINGS.scaleMax);
+      view.goTo({ center:{x,y,spatialReference:ext.spatialReference}, scale }).catch(()=>{});
+    }
+    // programma il prossimo step con intervallo random
+    const delay = randBetween(SS_SETTINGS.intMin, SS_SETTINGS.intMax) * 1000;
+    showTimer = setTimeout(doPresenterStep, delay);
+  }
+
+  // Avvio automatico modalità Presenter via URL
+  (function bootFromURL(){
+    const qs = parseQS();
+    if(qs.present==="1"){
+      // nascondi UI non necessaria
+      document.getElementById("panel").classList.add("collapsed");
+      document.getElementById("palSidebar").classList.add("collapsed");
+      // leggi parametri
+      SS_SETTINGS.intMin   = Math.max(1, parseInt(qs.intMin||"30",10));
+      SS_SETTINGS.intMax   = Math.max(SS_SETTINGS.intMin, parseInt(qs.intMax||"60",10));
+      SS_SETTINGS.scaleMin = Math.max(1000, parseInt(qs.scaleMin||"25000",10));
+      SS_SETTINGS.scaleMax = Math.max(SS_SETTINGS.scaleMin, parseInt(qs.scaleMax||"50000",10));
+      // avvia
+      startPresenterLocal();
+      // cambia icona bottone se presente
+      const b = document.getElementById("btnShow"); if(b) b.textContent="⏹";
+    }
+  })();
+
+  // shuffle globale (pulsante 🎲)
   document.getElementById("btnShuffleGlobal").onclick = doGlobalShuffle;
   function doGlobalShuffle(){
     SHUFFLE_TICK++;
