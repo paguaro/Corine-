@@ -17,7 +17,6 @@
   html,body,#viewDiv{height:100%;margin:0}
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
   #viewDiv{position:absolute;inset:0}
-  /* mappa trasparente: colore gestito da JS con giorno/notte */
   .esri-view .esri-view-surface{ background-color:transparent; }
 
   /* Pannello sinistro */
@@ -45,7 +44,8 @@
 
   /* Cards layer */
   .card{border:1px solid #ececec;border-radius:10px;padding:8px;background:#fafafa;margin-top:8px}
-  .card h5{margin:0 0 6px 0;font-size:13px}
+  .card h5{margin:0 0 6px 0;font-size:13px;cursor:pointer}
+  .card.collapsed > :not(h5){display:none} /* accordion: mostra solo il titolo quando è collassata */
   .swatch{display:inline-block;width:16px;height:16px;border:1px solid #ccc;margin-left:2px;border-radius:3px}
 
   /* Palette sidebar (draggable + resizable + scroll interno) */
@@ -291,61 +291,18 @@ function ensureTopoClient(){
   return topoReady;
 }
 
-/* ==================== Random zona robusto ==================== */
-let LAST_TARGET = null;
-function extentWidth(ext){ return Math.abs(ext.xmax - ext.xmin); }
-function extentHeight(ext){ return Math.abs(ext.ymax - ext.ymin); }
-function randInRange(min, max){ return min + Math.random()*(max-min); }
-function randomPointIn(ext){
-  return { x: randInRange(ext.xmin, ext.xmax), y: randInRange(ext.ymin, ext.ymax), spatialReference: ext.spatialReference };
-}
-function randomSubExtent(ext, fracMin=0.35, fracMax=0.75){
-  const fx = randInRange(fracMin, fracMax);
-  const fy = randInRange(fracMin, fracMax);
-  const w = extentWidth(ext)  * fx;
-  const h = extentHeight(ext) * fy;
-  const xmin = randInRange(ext.xmin, ext.xmax - w);
-  const ymin = randInRange(ext.ymin, ext.ymax - h);
-  return { xmin, ymin, xmax:xmin+w, ymax:ymin+h, spatialReference: ext.spatialReference };
-}
-function dist2(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return dx*dx+dy*dy; }
-
-/** centro feature random su layer visibile */
-async function randomFeatureCenter(){
-  const vis = LAYERS.filter(e=>e.layer.visible);
-  if(!vis.length) return null;
-  const target = vis[ Math.floor(Math.random()*vis.length) ].layer;
-  try{
-    const total = await target.queryFeatureCount(); if(!total) return null;
-    const start = Math.floor(Math.random()*total);
-    const q = target.createQuery(); q.outFields=["*"]; q.returnGeometry=true; q.num=1; q.start=start;
-    const r = await target.queryFeatures(q);
-    const f = r.features && r.features[0]; if(!f || !f.geometry) return null;
-    const g = f.geometry;
-    if(g.extent) return { x:(g.extent.xmin+g.extent.xmax)/2, y:(g.extent.ymin+g.extent.ymax)/2, sr:g.spatialReference };
-    if(g.centroid) return { x:g.centroid.x, y:g.centroid.y, sr:g.spatialReference };
-  }catch(_){}
-  return null;
-}
-
-/** target random con anti-stallo (garantisce variazione area) */
-async function pickRandomTarget(visibleUnionExtent){
-  let p = await randomFeatureCenter();
-  if(!p){
-    const sub = randomSubExtent(visibleUnionExtent);
-    const rp  = randomPointIn(sub);
-    p = { x: rp.x, y: rp.y, sr: rp.spatialReference || visibleUnionExtent.spatialReference };
-  }
-  const THRESH2 = (extentWidth(visibleUnionExtent)*0.08)**2 + (extentHeight(visibleUnionExtent)*0.08)**2;
-  let guard = 0;
-  while(LAST_TARGET && dist2(p, LAST_TARGET) < THRESH2 && guard < 8){
-    const sub = randomSubExtent(visibleUnionExtent, 0.25, 0.6);
-    const rp  = randomPointIn(sub);
-    p = { x: rp.x, y: rp.y, sr: p.sr };
-    guard++;
-  }
-  LAST_TARGET = p;
-  return p;
+/* ==================== Random zona semplice & robusto ==================== */
+function pickRandomTarget(ext){
+  const w = Math.abs(ext.xmax - ext.xmin);
+  const h = Math.abs(ext.ymax - ext.ymin);
+  // offset casuale dal centro entro ±30% dell'extent
+  const rx = (Math.random() - 0.5) * 0.6 * w;
+  const ry = (Math.random() - 0.5) * 0.6 * h;
+  return {
+    x: (ext.xmin+ext.xmax)/2 + rx,
+    y: (ext.ymin+ext.ymax)/2 + ry,
+    sr: ext.spatialReference
+  };
 }
 
 /* ==================== ArcGIS bootstrap ==================== */
@@ -496,12 +453,8 @@ require([
 
     const ext = await unionVisibleExtent();
     if(ext){
-      let center;
-      if(SS_SETTINGS.randZone){
-        center = await pickRandomTarget(ext);
-      }else{
-        center = { x:(ext.xmin+ext.xmax)/2, y:(ext.ymin+ext.ymax)/2, sr: ext.spatialReference };
-      }
+      const center = SS_SETTINGS.randZone ? pickRandomTarget(ext)
+        : { x:(ext.xmin+ext.xmax)/2, y:(ext.ymin+ext.ymax)/2, sr: ext.spatialReference };
       const scale = randBetween(SS_SETTINGS.scaleMin, SS_SETTINGS.scaleMax);
       view.goTo({ center:{ x:center.x, y:center.y, spatialReference:center.sr }, scale }).catch(()=>{});
     }
@@ -591,9 +544,10 @@ require([
     }
   })();
 
-  /* ===== Link presentazione (📤) con fallback locale ===== */
-  document.getElementById("btnCopyLink").onclick = async function(){
-    const hasUnshareable = LAYERS.some(e => !e.path || (typeof e.path === "string" && e.path.startsWith("blob:")));
+  /* ===== Link presentazione (📤) con scelta automatica + Shift per forzare sid ===== */
+  document.getElementById("btnCopyLink").onclick = async function(e){
+    const forceSid = !!(e && e.shiftKey);
+    const hasUnshareable = LAYERS.some(x => forceSid || !x.path || (typeof x.path==="string" && x.path.startsWith("blob:")));
     const url = new URL(location.href.split("?")[0]);
 
     if(hasUnshareable){
@@ -603,7 +557,7 @@ require([
       url.searchParams.set("present","1");
       url.searchParams.set("sid", sid);
       try{ await navigator.clipboard.writeText(url.toString()); showToast("✅ Link (locale) copiato!"); }
-      catch(e){ prompt("Copia manualmente:", url.toString()); }
+      catch(_){ prompt("Copia manualmente:", url.toString()); }
       return;
     }
 
@@ -613,7 +567,7 @@ require([
     url.searchParams.set("present","1");
     url.searchParams.set("statez", enc);
     try{ await navigator.clipboard.writeText(url.toString()); showToast("✅ Link copiato!"); }
-    catch(e){ prompt("Copia manualmente:", url.toString()); }
+    catch(_){ prompt("Copia manualmente:", url.toString()); }
   };
 
   /* ===== Preset (💾) ===== */
@@ -813,6 +767,9 @@ require([
       const card = document.createElement("div"); card.className="card";
       const h = document.createElement("h5"); h.textContent = entry.title; card.appendChild(h);
 
+      // toggle collassa/espandi card
+      h.onclick = ()=>{ card.classList.toggle("collapsed"); };
+
       const r1 = document.createElement("div"); r1.className="row";
       r1.innerHTML =
         "<label class='muted'>Sel</label><input type='checkbox' id='sel-"+idx+"'>" +
@@ -847,7 +804,9 @@ require([
       document.getElementById("op-"+idx).oninput = function(){ entry.opacity=Number(this.value); entry.layer.opacity=entry.opacity; };
       selField.onchange = function(){ entry.groupField=this.value; applyPalette(entry); updateCard(entry); };
       selPal.onchange   = function(){ entry.paletteName=this.value; entry.override=null; applyPalette(entry); updateCard(entry); };
-      b1.onclick = function(){ shuffleColors(entry, true, ++SHUFFLE_TICK); };
+
+      // 🎲 Shuffle manuale = indipendente (seed locale) — NON linkato al tick
+      b1.onclick = function(){ shuffleColors(entry, false); };
       b2.onclick = function(){ entry.override=null; applyPalette(entry); updateCard(entry); };
       b3.onclick = function(){ map.remove(entry.layer); const k=LAYERS.indexOf(entry); if(k>=0) LAYERS.splice(k,1); refreshLayerCards(); };
 
@@ -860,6 +819,14 @@ require([
     const pref=["group20","group_nac","Rank20","group","rank"], set=new Set(arr||[]), out=[];
     pref.forEach(p=>{ if(set.has(p)) out.push(p); }); arr.forEach(k=>{ if(!out.includes(k)) out.push(k); }); return out;
   }
+
+  /* ===== Shuffle globale (🎲 nel dock) — linkato: stesso ordine per stessa palette */
+  document.getElementById("btnShuffleGlobal").onclick = function(){
+    SHUFFLE_TICK++;
+    PALETTE_PERM.clear();
+    LAYERS.filter(e=>e.layer.visible).forEach(e=> shuffleColors(e, true, SHUFFLE_TICK));
+    refreshLayerCards();
+  };
 
   /* ===== Palette ===== */
   function buildPaletteGallery(){
