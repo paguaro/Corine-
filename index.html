@@ -34,7 +34,7 @@
   .grow{flex:1}
   .muted{color:var(--muted);font-size:12px}
   button,select,input{font:inherit}
-  .chip{padding:4px 8px;border-radius:999px;background:var(--btn);border:1px solid #e5e5e5}
+  .chip{padding:4px 8px;border-radius:999px;background:var(--btn);border:1px solid #e5e5e5;cursor:pointer}
   .chip:hover{background:var(--btnh)}
 
   /* Lista layer server compatta */
@@ -44,11 +44,12 @@
 
   /* Cards layer */
   .card{border:1px solid #ececec;border-radius:10px;padding:8px;background:#fafafa;margin-top:8px}
-  .card h5{margin:0 0 6px 0;font-size:13px;cursor:pointer}
-  .card.collapsed > :not(h5){display:none} /* accordion: mostra solo il titolo quando è collassata */
+  .card h5{margin:0 0 6px 0;font-size:13px;cursor:pointer;user-select:none}
+  /* forza collapse mostrando solo il titolo */
+  .card.collapsed > *:not(h5){display:none !important}
   .swatch{display:inline-block;width:16px;height:16px;border:1px solid #ccc;margin-left:2px;border-radius:3px}
 
-  /* Palette sidebar (draggable + resizable + scroll interno) */
+  /* Palette sidebar (draggable + resizable + scroll) */
   #palSidebar{
     position:absolute;top:12px;right:12px;z-index:30;
     display:flex;flex-direction:column;
@@ -186,7 +187,7 @@
     </div>
 
     <div class="row">
-      <label class="grow"><input type="checkbox" id="ssRandZone" checked> Zone random</label>
+      <label class="grow"><input type="checkbox" id="ssRandZone" checked> Zone random (non usato in modalità per-layer)</label>
     </div>
 
     <div class="actions">
@@ -289,20 +290,6 @@ function ensureTopoClient(){
   topoReady = loadScriptSandboxed("https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js")
     .then(()=>{ window.topojsonClient = window.topojson; });
   return topoReady;
-}
-
-/* ==================== Random zona semplice & robusto ==================== */
-function pickRandomTarget(ext){
-  const w = Math.abs(ext.xmax - ext.xmin);
-  const h = Math.abs(ext.ymax - ext.ymin);
-  // offset casuale dal centro entro ±30% dell'extent
-  const rx = (Math.random() - 0.5) * 0.6 * w;
-  const ry = (Math.random() - 0.5) * 0.6 * h;
-  return {
-    x: (ext.xmin+ext.xmax)/2 + rx,
-    y: (ext.ymin+ext.ymax)/2 + ry,
-    sr: ext.spatialReference
-  };
 }
 
 /* ==================== ArcGIS bootstrap ==================== */
@@ -445,19 +432,29 @@ require([
   };
   function stopPresenterLocal(){ if(showTimer){ clearTimeout(showTimer); showTimer=null; } document.getElementById("btnShow").textContent="🎞️"; }
   function startPresenterLocal(){ stopPresenterLocal(); doPresenterStep(); }
+
+  /* ====== NUOVA LOGICA SLIDESHOW: focus su un layer visibile a caso ====== */
   async function doPresenterStep(){
+    // 1) Shuffle sincronizzato per i layer visibili
     SHUFFLE_TICK++;
     PALETTE_PERM.clear();
     LAYERS.filter(e=>e.layer.visible).forEach(e=> shuffleColors(e, true, SHUFFLE_TICK));
     refreshLayerCards();
 
-    const ext = await unionVisibleExtent();
-    if(ext){
-      const center = SS_SETTINGS.randZone ? pickRandomTarget(ext)
-        : { x:(ext.xmin+ext.xmax)/2, y:(ext.ymin+ext.ymax)/2, sr: ext.spatialReference };
-      const scale = randBetween(SS_SETTINGS.scaleMin, SS_SETTINGS.scaleMax);
-      view.goTo({ center:{ x:center.x, y:center.y, spatialReference:center.sr }, scale }).catch(()=>{});
+    // 2) Scegli un layer visibile casuale e zooma sul suo extent
+    const visible = LAYERS.filter(e => e.layer.visible);
+    if(visible.length){
+      const target = visible[Math.floor(Math.random()*visible.length)];
+      try{
+        const ex = await target.layer.queryExtent();
+        if(ex && ex.extent){
+          const scale = randBetween(SS_SETTINGS.scaleMin, SS_SETTINGS.scaleMax);
+          await view.goTo({ target: ex.extent.expand(1.12), scale }, { animate:true });
+        }
+      }catch(err){ console.warn("queryExtent fallita:", err); }
     }
+
+    // 3) Prossimo step
     const delay = randBetween(SS_SETTINGS.intMin, SS_SETTINGS.intMax) * 1000;
     showTimer = setTimeout(doPresenterStep, delay);
   }
@@ -773,7 +770,7 @@ require([
       const r1 = document.createElement("div"); r1.className="row";
       r1.innerHTML =
         "<label class='muted'>Sel</label><input type='checkbox' id='sel-"+idx+"'>" +
-        "<label class='muted' style='margin-left:8px'>Vis</label><input type='checkbox' id='vis-"+idx+"' "+(entry.visible?"checked":"")+">" +
+        "<label class='muted' style='margin-left:8px'>Vis</label><input type='checkbox' id='vis-"+idx+"' "+(entry.layer.visible!==false?"checked":"")+">" +
         "<label class='muted' style='margin-left:8px'>Opacità</label><input type='range' id='op-"+idx+"' min='0' max='1' step='0.05' value='"+(entry.opacity||1)+"' class='grow'>";
       card.appendChild(r1);
 
@@ -800,12 +797,12 @@ require([
 
       layersWrap.appendChild(card);
 
-      document.getElementById("vis-"+idx).onchange = function(){ entry.visible=this.checked; entry.layer.visible=this.checked; };
+      document.getElementById("vis-"+idx).onchange = function(){ entry.layer.visible=this.checked; };
       document.getElementById("op-"+idx).oninput = function(){ entry.opacity=Number(this.value); entry.layer.opacity=entry.opacity; };
       selField.onchange = function(){ entry.groupField=this.value; applyPalette(entry); updateCard(entry); };
       selPal.onchange   = function(){ entry.paletteName=this.value; entry.override=null; applyPalette(entry); updateCard(entry); };
 
-      // 🎲 Shuffle manuale = indipendente (seed locale) — NON linkato al tick
+      // 🎲 Shuffle manuale = indipendente (seed locale)
       b1.onclick = function(){ shuffleColors(entry, false); };
       b2.onclick = function(){ entry.override=null; applyPalette(entry); updateCard(entry); };
       b3.onclick = function(){ map.remove(entry.layer); const k=LAYERS.indexOf(entry); if(k>=0) LAYERS.splice(k,1); refreshLayerCards(); };
@@ -855,7 +852,7 @@ require([
       // Applica ai layer selezionati (“Sel”) o, se nessuno, a tutti i visibili
       card.onclick = function(){
         const targets = LAYERS.filter((e,idx)=>{ const c=document.getElementById("sel-"+idx); return c && c.checked; });
-        const dest = targets.length ? targets : LAYERS.filter(e=>e.visible);
+        const dest = targets.length ? targets : LAYERS.filter(e=>e.visible!==false && e.layer.visible!==false);
         dest.forEach(e=>{ e.paletteName=name; e.override=null; applyPalette(e); updateCard(e); });
         refreshLayerCards();
       };
@@ -897,7 +894,7 @@ require([
     PALETTES=out; PALETTE_NAMES=Object.keys(out).sort();
   }
 
-  /* Extent unito dei layer visibili */
+  /* Extent unito dei layer visibili (ancora usato in qualche fallback) */
   async function unionVisibleExtent(){
     const vis = LAYERS.filter(e=>e.layer.visible);
     if(!vis.length) return null;
