@@ -464,6 +464,19 @@ require([
     showToast(`Punto impostato: ${lon.toFixed(6)}, ${lat.toFixed(6)}`);
     MAP_PICK = null;
   });
+// Copia negli appunti la palette e il colore cliccato
+view.on("click", (ev) => {
+  view.hitTest(ev).then(({ results }) => {
+    const g = results.find(r => r.graphic && LAYERS.some(e => e.layer === r.graphic.layer))?.graphic;
+    if (!g) return;
+    const entry = LAYERS.find(e => e.layer === g.layer);
+    const rank  = String(g.attributes?.[entry.groupField]);
+    const hex   = (entry.override?.[rank]) || (PALETTES[entry.paletteName]?.colors?.[rank]) || "#000000";
+
+    navigator.clipboard.writeText(`${entry.paletteName || "?"} | ${hex.toUpperCase()}`);
+    showToast(`📋 Copiato: ${entry.paletteName} • ${hex.toUpperCase()}`);
+  });
+});
 
   function setZoneMode(entry, idx, mode){
     entry.slideshow.modes = entry.slideshow.modes || ["man","man"]; // cen | ran | man
