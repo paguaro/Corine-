@@ -200,6 +200,18 @@
       <span id="ssScaleMaxVal" class="val">50k</span>
     </div>
 
+    <!-- NUOVI PARAMETRI -->
+    <div class="row">
+      <label class="grow">Durata zoom (ms)</label>
+      <input type="range" id="ssGotoMs" min="200" max="5000" step="100" value="1200">
+      <span id="ssGotoMsVal" class="val">1200 ms</span>
+    </div>
+    <div class="row">
+      <label class="grow">Durata jitter (ms)</label>
+      <input type="range" id="ssJitterMs" min="200" max="3000" step="100" value="600">
+      <span id="ssJitterMsVal" class="val">600 ms</span>
+    </div>
+
     <div class="row">
       <label class="grow"><input type="checkbox" id="ssRandZone" checked> (legacy) Random extent se mancano zone</label>
     </div>
@@ -227,7 +239,7 @@ const SERVER_ITEMS = [
   {label:"GUARDA", path:"GUARDA.topojson"},
   {label:"LEIRIA", path:"LEIRIA.topojson"},
   {label:"LISBOA", path:"LISBOA.topojson"},
-  {label:"LISBOA_BLOCOS", path:"lisboa_blocos_palette.topojson"},
+  {label:"LISBOA_BLOCOS", path:"lisboa_blocos.json"},
   {label:"PORTALEGRE", path:"PORTALEGRE.topojson"},
   {label:"PORTO", path:"PORTO.topojson"},
   {label:"SANTAREM", path:"SANTAREM.topojson"},
@@ -259,7 +271,10 @@ let SS_SETTINGS = {
   intMax: 60,
   scaleMin: 25000,
   scaleMax: 50000,
-  randZone: true
+  randZone: true,
+  /* NUOVI PARAMETRI */
+  gotoMs: 1200,
+  jitterMs: 600
 };
 
 let SHOW_TARGETS = [];
@@ -282,6 +297,10 @@ require([
 
   map = new EsriMap({ basemap:"gray-vector" });
   view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:7 });
+
+  /* Zoom continuo (niente scatti tra livelli) */
+  try { view.constraints.snapToZoom = false; } catch(_){}
+
   view.ui.move("zoom","top-right");
 
   /* Basemap Gallery bottom-right + auto-hide */
@@ -351,6 +370,8 @@ require([
   const ssIntMax    = document.getElementById("ssIntMax");
   const ssScaleMin  = document.getElementById("ssScaleMin");
   const ssScaleMax  = document.getElementById("ssScaleMax");
+  const ssGotoMs    = document.getElementById("ssGotoMs");
+  const ssJitterMs  = document.getElementById("ssJitterMs");
   const ssRandZone  = document.getElementById("ssRandZone");
   const ssStart     = document.getElementById("ssStart");
   const ssCancel    = document.getElementById("ssCancel");
@@ -359,14 +380,26 @@ require([
   const ssIntMaxVal   = document.getElementById("ssIntMaxVal");
   const ssScaleMinVal = document.getElementById("ssScaleMinVal");
   const ssScaleMaxVal = document.getElementById("ssScaleMaxVal");
+  const ssGotoMsVal   = document.getElementById("ssGotoMsVal");
+  const ssJitterMsVal = document.getElementById("ssJitterMsVal");
 
+  function updateSsLabels(){
+    ssIntMinVal.textContent   = SS_SETTINGS.intMin + " s";
+    ssIntMaxVal.textContent   = SS_SETTINGS.intMax + " s";
+    ssScaleMinVal.textContent = Math.round(SS_SETTINGS.scaleMin/1000) + "k";
+    ssScaleMaxVal.textContent = Math.round(SS_SETTINGS.scaleMax/1000) + "k";
+    ssGotoMsVal.textContent   = SS_SETTINGS.gotoMs + " ms";
+    ssJitterMsVal.textContent = SS_SETTINGS.jitterMs + " ms";
+  }
   function syncSsUI(){
-    ssNewWin.checked   = SS_SETTINGS.newWin;
-    ssIntMin.value     = SS_SETTINGS.intMin;
-    ssIntMax.value     = SS_SETTINGS.intMax;
-    ssScaleMin.value   = SS_SETTINGS.scaleMin;
-    ssScaleMax.value   = SS_SETTINGS.scaleMax;
-    ssRandZone.checked = !!SS_SETTINGS.randZone;
+    ssNewWin.checked    = SS_SETTINGS.newWin;
+    ssIntMin.value      = SS_SETTINGS.intMin;
+    ssIntMax.value      = SS_SETTINGS.intMax;
+    ssScaleMin.value    = SS_SETTINGS.scaleMin;
+    ssScaleMax.value    = SS_SETTINGS.scaleMax;
+    ssGotoMs.value      = SS_SETTINGS.gotoMs;
+    ssJitterMs.value    = SS_SETTINGS.jitterMs;
+    ssRandZone.checked  = !!SS_SETTINGS.randZone;
     updateSsLabels();
   }
   function readSsUI(){
@@ -377,15 +410,16 @@ require([
     SS_SETTINGS.scaleMin = clamp(parseInt(ssScaleMin.value||25000,10), 5000, 100000);
     SS_SETTINGS.scaleMax = clamp(parseInt(ssScaleMax.value||50000,10), 5000, 100000);
     if(SS_SETTINGS.scaleMax < SS_SETTINGS.scaleMin) SS_SETTINGS.scaleMax = SS_SETTINGS.scaleMin;
+    SS_SETTINGS.gotoMs   = clamp(parseInt(ssGotoMs.value||1200,10), 200, 5000);
+    SS_SETTINGS.jitterMs = clamp(parseInt(ssJitterMs.value||600,10), 200, 3000);
     SS_SETTINGS.randZone = !!ssRandZone.checked;
     updateSsLabels();
   }
-  function updateSsLabels(){
-    ssIntMinVal.textContent   = SS_SETTINGS.intMin + " s";
-    ssIntMaxVal.textContent   = SS_SETTINGS.intMax + " s";
-    ssScaleMinVal.textContent = Math.round(SS_SETTINGS.scaleMin/1000) + "k";
-    ssScaleMaxVal.textContent = Math.round(SS_SETTINGS.scaleMax/1000) + "k";
-  }
+  // live labels
+  [ssIntMin,ssIntMax,ssScaleMin,ssScaleMax,ssGotoMs,ssJitterMs].forEach(el=>{
+    el.addEventListener("input", ()=>{ readSsUI(); });
+  });
+
   btnSS.onclick = ()=>{ syncSsUI(); ssPanel.classList.toggle("show"); };
   ssCancel.onclick = ()=> ssPanel.classList.remove("show");
   ssStart.onclick = ()=>{
@@ -401,6 +435,8 @@ require([
       url.searchParams.set("intMax",SS_SETTINGS.intMax);
       url.searchParams.set("scaleMin",SS_SETTINGS.scaleMin);
       url.searchParams.set("scaleMax",SS_SETTINGS.scaleMax);
+      url.searchParams.set("gotoMs",SS_SETTINGS.gotoMs);
+      url.searchParams.set("jitterMs",SS_SETTINGS.jitterMs);
       url.searchParams.set("randZone",SS_SETTINGS.randZone ? "1":"0");
       window.open(url.toString(),"presenter","noopener,noreferrer");
     }else{
@@ -464,19 +500,18 @@ require([
     showToast(`Punto impostato: ${lon.toFixed(6)}, ${lat.toFixed(6)}`);
     MAP_PICK = null;
   });
-// Copia negli appunti la palette e il colore cliccato
-view.on("click", (ev) => {
-  view.hitTest(ev).then(({ results }) => {
-    const g = results.find(r => r.graphic && LAYERS.some(e => e.layer === r.graphic.layer))?.graphic;
-    if (!g) return;
-    const entry = LAYERS.find(e => e.layer === g.layer);
-    const rank  = String(g.attributes?.[entry.groupField]);
-    const hex   = (entry.override?.[rank]) || (PALETTES[entry.paletteName]?.colors?.[rank]) || "#000000";
-
-    navigator.clipboard.writeText(`${entry.paletteName || "?"} | ${hex.toUpperCase()}`);
-    showToast(`📋 Copiato: ${entry.paletteName} • ${hex.toUpperCase()}`);
+  // Copia negli appunti la palette e il colore cliccato
+  view.on("click", (ev) => {
+    view.hitTest(ev).then(({ results }) => {
+      const g = results.find(r => r.graphic && LAYERS.some(e => e.layer === r.graphic.layer))?.graphic;
+      if (!g) return;
+      const entry = LAYERS.find(e => e.layer === g.layer);
+      const rank  = String(g.attributes?.[entry.groupField]);
+      const hex   = (entry.override?.[rank]) || (PALETTES[entry.paletteName]?.colors?.[rank]) || "#000000";
+      navigator.clipboard.writeText(`${entry.paletteName || "?"} | ${hex.toUpperCase()}`);
+      showToast(`📋 Copiato: ${entry.paletteName} • ${hex.toUpperCase()}`);
+    });
   });
-});
 
   function setZoneMode(entry, idx, mode){
     entry.slideshow.modes = entry.slideshow.modes || ["man","man"]; // cen | ran | man
@@ -562,15 +597,31 @@ view.on("click", (ev) => {
       const t = SHOW_TARGETS[Math.floor(Math.random()*SHOW_TARGETS.length)];
       try{
         const scale = randBetween(SS_SETTINGS.scaleMin, SS_SETTINGS.scaleMax);
-        await view.goTo({ center:[t.pt.x, t.pt.y], scale }, { animate:true });
 
-        // jitter leggero
+        // 1) spostamento principale con easing morbido e durata da UI
+        await view.goTo(
+          { center:[t.pt.x, t.pt.y], scale },
+          {
+            animate:true,
+            duration: SS_SETTINGS.gotoMs,
+            easing: (tt)=> tt<.5 ? 2*tt*tt : 1 - Math.pow(-2*tt+2,2)/2 // easeInOutQuad
+          }
+        );
+
+        // 2) piccolo respiro/jitter
         setTimeout(()=>{
           const [lon,lat] = jitterLonLat(t.pt.x, t.pt.y, 3);
-          view.goTo({ center:[lon,lat] }, { animate:true, duration:500 });
+          view.goTo(
+            { center:[lon,lat] },
+            {
+              animate:true,
+              duration: SS_SETTINGS.jitterMs,
+              easing: (tt)=> 1 - Math.pow(1-tt, 3) // easeOutCubic
+            }
+          );
         }, 200);
 
-        // SOLO DOPO SHUFFLE (linkato), con delay configurabile
+        // 3) SOLO DOPO SHUFFLE (linkato), con delay configurabile globale
         setTimeout(()=>{
           SHUFFLE_TICK++;
           PALETTE_PERM.clear();
@@ -587,7 +638,7 @@ view.on("click", (ev) => {
           const ex=await target.layer.queryExtent();
           if(ex && ex.extent){
             const scale=randBetween(SS_SETTINGS.scaleMin,SS_SETTINGS.scaleMax);
-            await view.goTo({ target: ex.extent.expand(1.12), scale }, { animate:true });
+            await view.goTo({ target: ex.extent.expand(1.12), scale }, { animate:true, duration: SS_SETTINGS.gotoMs });
           }
         }catch(_){}
       }
@@ -679,11 +730,13 @@ view.on("click", (ev) => {
       document.getElementById("panel").classList.add("collapsed");
       document.getElementById("palSidebar").classList.add("collapsed");
 
-      if(qs.intMin)  SS_SETTINGS.intMin   = Math.max(5, parseInt(qs.intMin,10));
-      if(qs.intMax)  SS_SETTINGS.intMax   = Math.max(SS_SETTINGS.intMin, parseInt(qs.intMax,10));
-      if(qs.scaleMin)SS_SETTINGS.scaleMin = Math.max(5000, parseInt(qs.scaleMin,10));
-      if(qs.scaleMax)SS_SETTINGS.scaleMax = Math.max(SS_SETTINGS.scaleMin, parseInt(qs.scaleMax,10));
-      if(qs.randZone)SS_SETTINGS.randZone = (qs.randZone==="1");
+      if(qs.intMin)   SS_SETTINGS.intMin   = Math.max(5, parseInt(qs.intMin,10));
+      if(qs.intMax)   SS_SETTINGS.intMax   = Math.max(SS_SETTINGS.intMin, parseInt(qs.intMax,10));
+      if(qs.scaleMin) SS_SETTINGS.scaleMin = Math.max(5000, parseInt(qs.scaleMin,10));
+      if(qs.scaleMax) SS_SETTINGS.scaleMax = Math.max(SS_SETTINGS.scaleMin, parseInt(qs.scaleMax,10));
+      if(qs.gotoMs)   SS_SETTINGS.gotoMs   = clamp(parseInt(qs.gotoMs,10), 200, 5000);
+      if(qs.jitterMs) SS_SETTINGS.jitterMs = clamp(parseInt(qs.jitterMs,10), 200, 3000);
+      if(qs.randZone) SS_SETTINGS.randZone = (qs.randZone==="1");
 
       if(imported){ await applyState(imported); }
       startPresenterLocal();
@@ -995,7 +1048,7 @@ view.on("click", (ev) => {
         r.onchange = async ()=>{ if(r.checked){ uncheckAll(); r.checked=true; setZoneMode(entry,idxZone,"ran"); await setZoneRandom(entry,idxZone); updateZoneRowUI(entry, idx); } };
         m.onchange = ()=>{ if(m.checked){ uncheckAll(); m.checked=true; setZoneMode(entry,idxZone,"man"); updateZoneRowUI(entry, idx); } };
 
-        // Il pin è parte del label "Man": usiamo doppio click sul label per attivare pick
+        // Il pin è parte del label "Man": clic sul pin per attivare pick
         m.parentElement.onclick = (ev)=>{ if(ev.target.tagName==="SPAN"){ MAP_PICK = { entry, idx:idxZone }; showToast(`Clicca in mappa per Zona ${isA?'A':'B'}`); } };
 
         inp.onchange = ()=>{ if(applyZoneFromInput(entry, idxZone, inp.value)){ m.checked=true; c.checked=false; r.checked=false; updateZoneRowUI(entry, idx); } };
@@ -1118,4 +1171,3 @@ view.on("click", (ev) => {
 </script>
 </body>
 </html>
-
